@@ -1,6 +1,6 @@
 # MMoCHi: <ins>M</ins>ulti<ins>Mo</ins>dal <ins>C</ins>lassifier <ins>Hi</ins>erarchy
 
-<img align="right" src="https://github.com/donnafarberlab/MMoCHi/blob/master/docs/figures/mmochi_logo.svg" width="480">
+<img align="right" src="./docs/figures/mmochi_logo.svg" width="480">
 
 ## About
 
