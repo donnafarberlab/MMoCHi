@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.1.0' 
+VERSION = '0.1.1' 
 DESCRIPTION = 'MultiMOdal Classifier HIerarchy (MMoCHi)'
 LONG_DESCRIPTION = 'A hierarchical classification system designed for ground-truth thresholding of cell populations on CITE-Seq for training of random forests.'
 
@@ -14,7 +14,5 @@ setup(  name="mmochi",
         url = 'https://github.com/donnafarberlab/MMoCHi.git',
         keywords=['scRNA','CITE-Seq','Classifier','Multimodal'],
 	    install_requires=['pandas','numpy','scikit-learn','imbalanced-learn',
-                          'scipy','statistics','scanpy','anndata',
-                          'ipywidgets','treelib','tqdm','scikit-fda',
-                          'matplotlib','seaborn','typing'],
+                          'scipy','scanpy','anndata','treelib','matplotlib'],
         classifiers= [])

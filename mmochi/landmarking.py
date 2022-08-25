@@ -1,35 +1,22 @@
-from tqdm.notebook import tqdm
-from tqdm.contrib.concurrent import process_map
 from functools import partial
-
-from skfda.preprocessing.registration import landmark_registration_warping, invert_warping
-from skfda.representation.grid import FDataGrid
 from scipy.signal import find_peaks
 import scipy.stats as stats
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from multiprocessing import Pool, get_context
 from .logger import logg
 from . import utils
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    def tqdm(x, **kwargs):
+        return x
 
-default_single_peaks = ['Armenian_Hamster_IgG_Isotype_Ctrl', 'Mouse_IgG1_k_isotype_Ctrl', 'Mouse_IgG2a_k_isotype_Ctrl', 'Mouse_IgG2b_k_isotype_Ctrl', 'Rat_IgG1_k_Isotype_Ctrl',
-                        'Rat_IgG2a_k_Isotype_Ctrl', 'Rat_IgG2b_k_Isotype_Ctrl', 'anti_human_CD105', 'anti_human_CD119_IFN-g_R_a_chain', 'anti_human_CD11a', 'anti_human_CD112_Nectin-2', 
-                        'anti_human_CD122_IL-2Rb', 'anti_human_CD134_OX40', 'anti_human_CD137_4-1BB', 'anti_human_CD138_Syndecan-1','anti_human_CD14','anti_human_CD152_CTLA-4',
-                        'anti_human_CD154','anti_human_CD18','anti_human_CD183_CXCR3','anti_human_CD185_CXCR5','anti_human_CD186_CXCR6','anti_human_CD194_CCR4','anti_human_CD196_CCR6',
-                        'anti_human_CD1d', 'anti_human_CD209_DC-SIGN','anti_human_CD223_LAG-3', 'anti_human_CD226_DNAM-1','anti_human_CD23','anti_human_CD26','anti_human_CD267_TACI',
-                        'anti_human_CD27', 'anti_human_CD270_HVEM_TR2','anti_human_CD272_BTLA', 'anti_human_CD29', 'anti_human_CD303_BDCA-2','anti_human_CD314_NKG2D', 'anti_human_CD319_CRACC', 
-                        'anti_human_CD33', 'anti_human_CD335_NKp46', 'anti_human_CD352_NTB-A','anti_human_CD328_Siglec-7','anti_human_CD370_CLEC9A_DNGR1','anti_human_CD38','anti_human_CD39', 
-                        'anti_human_CD40','anti_human_CD48','anti_human_CD41', 'anti_human_CD42b','anti_human_CD45','anti_human_CD49b', 'anti_human_CD49d', 'anti_human_CD52', 'anti_human_CD54',
-                        'anti_human_CD58_LFA-3','anti_human_CD71','anti_human_CD79b_Igb','anti_human_CD80','anti_human_CD81_TAPA-1','anti_human_CD82','anti_human_CD83', 'anti_human_CD85j_ILT2',
-                        'anti_human_CD86','anti_human_CD95_Fas','anti_human_CXCR1','anti_human_HLA-ABC','anti_human_Ig_light_chain_l','anti_human_LOC-1','anti_human_TCR_g_d',
-                        'anti_human_TIGIT_VSTIM3', 'anti_mouse_human_CD44', 'anti_human_HLA-DR', 'anti_human_CD107a_LAMP-1','anti_human_CD27','anti_human_CD169_Sialoadhesin_Siglec-1',
-                        'anti_human_CD155_PVR','anti_human_CD101_BB27']
-
-def landmark_register_adts(adata, batch_key = 'donor', data_key = 'protein', key_added = 'landmark_protein',show=False,single_peaks=[],marker_bandwidths={},**kwargs):
+def landmark_register_adts(adata, batch_key = 'donor', data_key = 'protein', key_added = 'landmark_protein',show=False,single_peaks=[],marker_bandwidths={},peak_overrides={},**kwargs):
     ''' Currently expect log2(CP1k) normalized ADTs. I am unsure how important that is
     For now, appears to require scikit-fda==0.6
     TODO add info and cite paper
-    
     '''
     default_bandwidth = 0.2
     assert len(adata.obs_names) == len(set(adata.obs_names)), 'Obs names must be made unique'
@@ -38,29 +25,47 @@ def landmark_register_adts(adata, batch_key = 'donor', data_key = 'protein', key
     adata.obsm[key_added] = pd.DataFrame(index=adata.obs_names,columns=markers)
     
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
-    
-    for batch_mask, batch in zip(batch_masks, tqdm(batches,total=len(batches))):
+    adata.uns[key_added+"_peaks"] = dict()
+    adata.uns[data_key+"_peaks"] = dict()
+    for batch_mask, batch in zip(tqdm(batch_masks), batches):
         input_arrays = [np.array(adata.obsm[data_key].loc[batch_mask,marker]) for marker in markers]
         single_peak_list = [marker in single_peaks for marker in markers]
         bandwidths = [marker_bandwidths[marker] if marker in marker_bandwidths.keys() else default_bandwidth for marker in markers]
+        overrides = []
+        for marker in markers: 
+            if batch in peak_overrides.keys() and marker in peak_overrides[batch].keys():
+                overrides.append(peak_overrides[batch][marker])
+            else:
+                overrides.append([])
         barcodes = adata[batch_mask].obs_names
+        adata.uns[key_added+"_peaks"][batch] = dict()
+        adata.uns[data_key+"_peaks"][batch] = dict()
         if show:
-            arrays = []
-            for i, (input_array,single_peak,bandwidth) in enumerate(zip(input_arrays,single_peak_list,bandwidths)):
-                arrays.append(_landmark_registration((input_array,single_peak,bandwidth), base_barcodes=barcodes,show=show,info=(str(batch)+" "+markers[i]), **kwargs))
+            res = []
+            for i, (input_array,single_peak,bandwidth,override) in enumerate(zip(input_arrays,single_peak_list,bandwidths,overrides)):
+                res.append(_landmark_registration((input_array,single_peak,bandwidth,override), base_barcodes=barcodes,show=show,info=(str(batch)+" "+markers[i]), **kwargs))
         else:
             fun = partial(_landmark_registration, base_barcodes=barcodes,show=show, **kwargs)
-            arrays = process_map(fun, zip(input_arrays,single_peak_list,bandwidths),total=len(input_arrays))
-        for marker,array in zip(markers,arrays):
-            adata.obsm[key_added].loc[barcodes,marker] = array
+            with get_context("spawn").Pool() as pool:
+                res = pool.map(fun, zip(input_arrays,single_peak_list,bandwidths,overrides))
+        for marker,r in zip(markers,res):
+            adata.obsm[key_added].loc[barcodes,marker] = r[2]
+            adata.uns[data_key+"_peaks"][batch][marker] = r[1]
+            adata.uns[key_added+"_peaks"][batch][marker] = r[0]
     adata.obsm[key_added] = adata.obsm[key_added].astype(float)
     return adata
 
-def _landmark_registration(array_single_peak_bandwidth,base_barcodes,show=False,**kwargs):
+def _landmark_registration(array_single_peak_bandwidth_override,base_barcodes,show=False,**kwargs):
     ''' kwargs get sent to detect landmarks TODO add info'''
-    array = array_single_peak_bandwidth[0]
-    single_peak = array_single_peak_bandwidth[1]
-    bandwidth = array_single_peak_bandwidth[2]
+    try:
+        from skfda.preprocessing.registration import landmark_registration_warping, invert_warping
+        from skfda.representation.grid import FDataGrid
+    except ImportError:
+        raise ImportError('Please install skfda using pip install scikit-fda==0.5')
+    array = array_single_peak_bandwidth_override[0]
+    single_peak = array_single_peak_bandwidth_override[1]
+    bandwidth = array_single_peak_bandwidth_override[2]
+    override = array_single_peak_bandwidth_override[3]
     if max(array) == 0:
         return array
     x = np.linspace(0,10,1000)
@@ -69,8 +74,17 @@ def _landmark_registration(array_single_peak_bandwidth,base_barcodes,show=False,
     kde = stats.gaussian_kde(ray,bw_method='scott')
     kde.set_bandwidth(bandwidth)
     y = kde.pdf(x)
-    peaks = _detect_landmarks(y,single_peak=single_peak,show=show,**kwargs)
     fd = FDataGrid(y, grid_points=x)
+    if override == []:
+        peaks = _detect_landmarks(y,single_peak=single_peak,show=show,**kwargs)
+    else:
+        if not type(override) == list:
+            peaks = list(override)
+        else:
+            peaks = override
+        peaks = [int(round((peak+min(ray)/(max(ray)-min(ray))),2)*100) for peak in peaks]
+    
+        
     if len(peaks)>1:
         if y[peaks[0]]*10>y[peaks[-1]]: # If it's a "rare" negative population
             location = [1,3]
@@ -80,7 +94,7 @@ def _landmark_registration(array_single_peak_bandwidth,base_barcodes,show=False,
     elif len(peaks)==1:
         location,peaks = [1],[x[peaks[0]]]
     else:
-        location,peaks = [1],[max(y)]
+        location,peaks = [1],[max(y)] # SHOULD NEVER BE TRIGGERED?
     warp = landmark_registration_warping(fd,[sorted(peaks)],location=location)
     warp = invert_warping(warp)
     ray = warp(ray).reshape(-1)
@@ -88,28 +102,30 @@ def _landmark_registration(array_single_peak_bandwidth,base_barcodes,show=False,
     df = pd.DataFrame(array,index=base_barcodes)
     df[df>0] = np.nan
     df = df.fillna(pd.DataFrame(ray,index=barcodes))
-    return np.array(df[0])
+    if show:
+        plt.show()
+    return (location, peaks, np.array(df[0]))
 
-def _test_landmarks(adata,marker, batch, data_key, batch_key,single_peak=False):
-    ''' TODO add info'''
-    x = np.linspace(0,10,1000)
-    ray = adata.obsm[data_key][marker]
-    if batch_key is None:
-        batches = ['None']
-        ray_list = [ray]
-    elif batch is None:
-        batches=adata.obs[batch_key].unique()
-        ray_list = [ray[adata.obs[batch_key]==batch] for batch in batches]
-    else:
-        batches=[batch]
-        ray_list = [ray[adata.obs[batch_key]==batch]]
-    for ray,batch in zip(ray_list,batches):
-        ray = ray[ray>0]
-        kde = stats.gaussian_kde(ray,bw_method='scott')
-        kde.set_bandwidth(0.2)
-        y = kde.pdf(x)
-        peaks = _detect_landmarks(y,show=3,info=batch+' '+marker,single_peak=single_peak)
-    return
+# def _test_landmarks(adata,marker, batch, data_key, batch_key,single_peak=False):
+#     ''' TODO add info'''
+#     x = np.linspace(0,10,1000)
+#     ray = adata.obsm[data_key][marker]
+#     if batch_key is None:
+#         batches = ['None']
+#         ray_list = [ray]
+#     elif batch is None:
+#         batches=adata.obs[batch_key].unique()
+#         ray_list = [ray[adata.obs[batch_key]==batch] for batch in batches]
+#     else:
+#         batches=[batch]
+#         ray_list = [ray[adata.obs[batch_key]==batch]]
+#     for ray,batch in zip(ray_list,batches):
+#         ray = ray[ray>0]
+#         kde = stats.gaussian_kde(ray,bw_method='scott')
+#         kde.set_bandwidth(0.2)
+#         y = kde.pdf(x)
+#         peaks = _detect_landmarks(y,show=3,info=batch+' '+marker,single_peak=single_peak)
+#     return
 
 def _detect_landmarks(y,single_peak=False,landmark_threshold = 0.0025, peak_min_height = .002, show=False,min_dist=30,min_width=20,min_secondary_landmark=200,info=None,primary_prominence=0.003,secondary_prominence=0.0001):
     '''min_secondary_landmark is treated like just a suggestion
@@ -124,7 +140,7 @@ def _detect_landmarks(y,single_peak=False,landmark_threshold = 0.0025, peak_min_
             if height*5 < max(heights):
                 landmarks.remove(landmark)
                 heights.remove(height)
-        primary_landmarks = landmarks = [max(landmarks)]
+        primary_landmarks = landmarks = [landmarks[np.argmax(heights)]]
         rejects = secondary_neg_landmarks = secondary_landmarks = []
     else:
         primary_landmarks, _ = find_peaks(y,prominence=0.003,width=min_width,height=peak_min_height)#,rel_height = peak_min_height)
@@ -200,4 +216,130 @@ def _detect_landmarks(y,single_peak=False,landmark_threshold = 0.0025, peak_min_
         axs[1].set_title('Deriv')
     if show:
         fig.show()
+    plt.close()
     return landmarks
+
+import seaborn as sns
+
+
+# def stacked_hist_plots(adata, marker_list, batch='donor', data_key = ['protein','landmark_protein'],data_key_colors=['b','r'],aspect=3, height=.85, save_fig = None):
+#     '''Code adapted from https://python.plainenglish.io/ridge-plots-with-pythons-seaborn-4de5725881af'''
+#     try:
+#         import seaborn as sns
+#     except ImportError:
+#         raise ImportError('Please install seaborn using pip install seaborn')
+        
+#     if batch is None:
+#         batch='None'
+#         df = pd.DataFrame('All', index=adata.obs_names, columns = [batch])
+#     else:
+#         df = pd.DataFrame(adata.obs[batch], index=adata.obs_names, columns = [batch])
+#     if not pd.api.types.is_list_like(marker_list):
+#         marker_list = [marker_list]
+#     if not pd.api.types.is_list_like(data_key):
+#         data_key = [data_key]
+#     markname_full_list = []
+#     for marker in marker_list:
+#         for dkey in data_key:
+#             data, markname_full = utils.get_data(adata,marker,dkey,return_source=True)
+#             df[markname_full] = data
+#             markname_full_list.append(markname_full)
+#     df = df.melt(id_vars = batch)
+#     df = df[df.value>0]
+#     df.sort_values(['variable',batch],inplace=True)
+#     sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0), 'axes.linewidth':2})
+#     # df = df.sample(frac=.01)
+#     print(df)
+#     g = sns.FacetGrid(df, row=batch, hue=batch,palette='tab10', aspect=aspect, height=height,col='variable',
+#                      col_order = markname_full_list, row_order = sorted(df[batch].unique()))
+#     g.map_dataframe(sns.histplot, x='value', fill=True, alpha=.5,binrange=(0.001,df.max()), lw=2)
+#     g.fig.subplots_adjust(hspace=-.75)
+#     g.set_titles('')
+#     g.set(yticks=[], ylabel=None, xlabel=f'Expression')
+#     g.despine(left=True)
+#     left_axes = g.axes.flatten('F')[:len(df[batch].unique())]
+#     for left_ax, batch_id in zip(left_axes, sorted(df[batch].unique())):
+#         plt.text(x=0,y=0.1,s=batch_id, transform=left_ax.transAxes,ha='right')
+#     for i, markname_full in enumerate(markname_full_list):
+#         color = data_key_colors[data_key.index(markname_full.split("__")[-1])]
+#         plt.text(x=1/(len(markname_full_list))*(i) + .5/(len(markname_full_list)),y=height,s="\n".join(markname_full.split("_")), transform=g.fig.transFigure,ha='center',c=color)
+#     if not save_fig is None:
+#         g.savefig(save_fig)
+#     plt.show()
+#     return
+
+
+
+def stacked_density_plots(adata, marker_list, batch='donor', data_key = ['protein','landmark_protein'],data_key_colors=['b','r'],aspect=3, height=.85, save_fig = None,subsample=1,bw_adjust=0):
+    '''Code adapted from https://python.plainenglish.io/ridge-plots-with-pythons-seaborn-4de5725881af'''
+    try:
+        import seaborn as sns
+    except ImportError:
+        raise ImportError('Please install seaborn using pip install seaborn')
+        
+    if batch is None:
+        batch='None'
+        df = pd.DataFrame('All', index=adata.obs_names, columns = [batch])
+    else:
+        df = pd.DataFrame(adata.obs[batch], index=adata.obs_names, columns = [batch])
+    if not pd.api.types.is_list_like(marker_list):
+        marker_list = [marker_list]
+    if not pd.api.types.is_list_like(data_key):
+        data_key = [data_key]
+    markname_full_list = []
+    for marker in marker_list:
+        for dkey in data_key:
+            data, markname_full = utils.get_data(adata,marker,dkey,return_source=True)
+            df[markname_full] = data
+            markname_full_list.append(markname_full)
+    df = df.melt(id_vars = batch)
+    df = df[df.value>0]
+    df.sort_values(['variable',batch],inplace=True)
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0), 'axes.linewidth':2})
+    df = df.sample(frac=subsample)
+    g = sns.FacetGrid(df, row=batch, hue=batch,palette='tab10', aspect=aspect, height=height,col='variable',
+                     col_order = markname_full_list, row_order = sorted(df[batch].unique()))
+    if bw_adjust > 0:
+        g.map_dataframe(sns.kdeplot, x='value', fill=True, alpha=.5,gridsize=100, lw=2,bw_adjust=bw_adjust,common_norm=False)
+    else:
+        g.map_dataframe(sns.histplot, x='value', stat = 'density', bins=40,common_bins=True,alpha=.5)
+    g.fig.subplots_adjust(hspace=-.75)
+    g.set_titles('')
+    g.set(yticks=[], ylabel=None, xlabel=f'Expression')
+    g.despine(left=True)
+    left_axes = g.axes.flatten('F')[:len(df[batch].unique())]
+    for left_ax, batch_id in zip(left_axes, sorted(df[batch].unique())):
+        plt.text(x=0,y=0.1,s=batch_id, transform=left_ax.transAxes,ha='right')
+    for i, markname_full in enumerate(markname_full_list):
+        color = data_key_colors[data_key.index(markname_full.split("__")[-1])]
+        plt.text(x=1/(len(markname_full_list))*(i) + .5/(len(markname_full_list)),y=height,s="\n".join(markname_full.split("_")), transform=g.fig.transFigure,ha='center',c=color)
+    for i, dkey in enumerate(data_key):
+        if (dkey+'_peaks') in adata.uns.keys():
+            for j, marker in enumerate(marker_list):
+                for k,b in enumerate(sorted(df[batch].unique())):
+                    if b in adata.uns[dkey+'_peaks'].keys() and marker in adata.uns[dkey+'_peaks'][b].keys():
+                        # g.axes[k][j*len(data_key)+i].text(0,0,(b[0:4],marker,dkey[0]))
+                        for peak in adata.uns[dkey+'_peaks'][b][marker]:
+                            g.axes[k][j*len(data_key)+i].axvline(peak,ymax=0.1,color='black')
+    if not save_fig is None:
+        g.savefig(save_fig)
+    plt.show()
+    return
+
+def density_plot(adata, marker, batch, batch_id, data_key,bw_adjust=0):
+    try:
+        import seaborn as sns
+    except ImportError:
+        raise ImportError('Please install seaborn using pip install seaborn')
+    
+    data, markname_full = utils.get_data(adata,marker,data_key,return_source=True)
+    data = data[adata.obs[batch]==batch_id]
+    if bw_adjust > 0:
+        ax = sns.kdeplot(x=data, fill=True,gridsize=100, lw=2,bw_adjust=bw_adjust)
+    else:
+        ax = sns.histplot(x=data, stat = 'density', bins=80)
+    for peak in adata.uns[data_key+'_peaks'][batch_id][marker]:
+        ax.axvline(peak,ymax=0.1,color='black')
+    ax.set_title(markname_full)
+    plt.show()
+    return

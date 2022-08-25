@@ -9,8 +9,6 @@ import random
 import gc
 from collections import Counter
 import scipy.sparse as sp
-import scipy.stats as stats
-import statistics 
 import scanpy as sc
 import anndata
 
@@ -18,7 +16,7 @@ from . import utils
 from .logger import logg
 from . import thresholding 
 
-def classifier_setup(adata, data_key=None, reduce_features_min_cells=0, features_limit=None):
+def classifier_setup(adata,x_modalities, data_key=None, reduce_features_min_cells=0, features_limit=None):
     '''Setup before training a classifier. This can be run before the classifier (to reduce runtime of the classifier function in a parameter optimization loop),
     or is automatically run when training a classifier. It concatenates the .X and any data_key in the .obsm, then performs feature reduction (if reduce_features_min_cells > 0).
     Next, features can be limited by an external feature set.
@@ -32,15 +30,17 @@ def classifier_setup(adata, data_key=None, reduce_features_min_cells=0, features
     features_limit: listlike of str
     '''   
     print('Setting up...')
-    
+    if type(x_modalities) is str and x_modalities in adata.var.columns:
+        x_modalities = adata.var[x_modalities]
+        
     if data_key is None or features_limit == 'GEX':
         print('Using .X only')
         X = sp.csr_matrix(adata.X)
-        features_used = list(adata.var_names)
+        features_used = list(adata.var_names+"_mod_"+x_modalities)
     else:
         print('Using .X and',data_key)
         X = sp.hstack([adata.X,adata.obsm[data_key]],format='csr')
-        features_used = list(adata.var_names) + list(adata.obsm[data_key].columns)
+        features_used = list(adata.var_names+"_mod_"+x_modalities) + list(adata.obsm[data_key].columns+"_mod_"+data_key)
         
     print("Reducing features...")
     
@@ -78,7 +78,7 @@ def _reduce_features(X,feature_names, min_cells=50):
         print("No min_cells feature reduction...")
     return X, feature_names
 
-def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
+def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,x_modalities='GEX',
              batch_key=None,retrain=False,plot_thresholds=False,
              reduce_features_min_cells=25, allow_spike_ins=True,
              score=False, proba_suffix='_proba', # for UNS. I should honestly fix all of these...
@@ -99,6 +99,7 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
     
     data_key: str, key in adata.obsm to be used for ground truth thresholding
     x_data_key: str, key in adata.obsm, used for the creation of the training data, if undefined, defaults to data_key
+    x_modalities: str, column in adata.var, or name of the modality of the data in the .X
     batch_key: str, name of a column in adata.obs that corresponds to a batch for use in the classifier
                    
     plot_thresholds: bool, Whether to display thresholds when calculating ground truth
@@ -106,7 +107,7 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
     
     reduce_features_min_cells: int, remove features that are expressed in fewer than this number, passed to _reduce_features
                                     feature reduction can be a very powerful tool for improving classifier performance
-    features_limit: str, listlike of str, either "GEX" or a list of str specifying features to limit to
+    features_limit: str, listlike of str, a list of str specifying features to limit to, in the format [feature_name]_mod_[modality], e.g. CD3E_mod_GEX or
     
     X, features_used: sp.csr_matrix and listlike of str, Optional setup data to circumvent the initial classifier setup functions
                                                          The presence of both of these overrides any predefined feature reduction techniques.
@@ -141,7 +142,7 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
         x_data_key = data_key
     setup_complete = (not X is None) and (not features_used is None)
     if not setup_complete:
-        X,features_used = classifier_setup(adata,x_data_key,reduce_features_min_cells,features_limit=features_limit)
+        X,features_used = classifier_setup(adata,x_modalities,x_data_key,reduce_features_min_cells,features_limit=features_limit)
     print(f"Set up complete.\nUsing {len(features_used)} features")
     
     classifications = hierarchy.get_classifications()
@@ -270,7 +271,7 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
                         df = gt_df.loc[gt_barcodes_batch].copy()
                         mapper = dict(zip(subset_adata.obs_names,range(0,len(subset_adata.obs_names))))
                         gt_barcodes_batch = [mapper[i] for i in gt_barcodes_batch]
-                        X,y = _get_train_data(subset_X[gt_barcodes_batch],df,level,resample_method,max_training,in_danger_noise_checker)
+                        X,y = _get_train_data(subset_X[gt_barcodes_batch],df,level,resample_method,max_training,in_danger_noise_checker, features_used)
                         train_df = _map_training(subset_X[gt_barcodes_batch], X, df.index)
                         train_dfs.append(train_df)
                         clf.fit(X, y)
@@ -452,7 +453,7 @@ def ground_truth(adata,hierarchy,level,data_key,plot=True,reference=None,batch=N
     
     return templin
     
-def _get_train_data(X,templin,level,resample_method,max_training,in_danger_noise_checker):
+def _get_train_data(X,templin,level,resample_method,max_training,in_danger_noise_checker, features_used):
     '''TODO add info'''
     print('Choosing training data...') # Randomly select ground truth dataset for training purposes...80% train, 20% held out
     templin[level+'_train'] = False
@@ -475,8 +476,8 @@ def _get_train_data(X,templin,level,resample_method,max_training,in_danger_noise
 
     logg.info(f"{len(y)} real cells in training set...")
     print('Resampling...')
-    X,y = _balance_training_classes(X,y,resample_method,max_training=max_training,in_danger_noise_checker=in_danger_noise_checker)
-    logg.debug(f'Selected for training: {len(y)}, with {stats.itemfreq(y)}')
+    X,y = _balance_training_classes(X,y,features_used, resample_method,max_training=max_training,in_danger_noise_checker=in_danger_noise_checker)
+    logg.debug(f'Selected for training: {len(y)}, with {np.unique(y, return_counts=True)}')
     print(f"Training with {len(y)} events after {resample_method} resampling...")
     assert len(set(y)) > 1, 'Must have more than 1 class to classify...'
 
@@ -546,16 +547,25 @@ def _in_danger_noise(nn_estimator, samples, y, kind="danger"):
         return items
     
 class HVF_PCA_Neighbors():
-    def __init__(self,**kwargs):
-        # hvf = sklearn.feature_selection.SelectKBest(k=5000)
-        # pca = 
+    def __init__(self,features_used,**kwargs):
+        self.features_used = np.array(features_used)
+        self.feature_modalities = np.array([x.split('_mod_')[-1] for x in features_used])
+        self.modalities = Counter(self.feature_modalities)
         self.neighbors = sklearn.neighbors.NearestNeighbors(**kwargs)
         self.n_neighbors = self.neighbors.n_neighbors
     def fit(self,X):
         '''TODO implement HVG calculation and pca that does not depend on scanpy'''
-        adata = anndata.AnnData(X=X,dtype=np.float32)
-        sc.pp.highly_variable_genes(adata,n_top_genes = 5000)
-        logg.debug('PCA for fit for HVF_PCA_Neighbors')
+        self.hvf = []
+        for i in self.modalities:
+            logg.debug(f'Calculating HVFs for {i}')
+            if self.modalities[i] < 5000:
+                self.hvf.extend(self.features_used[self.feature_modalities == i])
+            else:
+                adata = anndata.AnnData(X=X[:,self.feature_modalities == i],dtype=np.float32, var = pd.DataFrame(index=self.features_used[self.feature_modalities == i]))
+                sc.pp.highly_variable_genes(adata,n_top_genes = 5000)
+                self.hvf.extend(adata.var_names[adata.var.highly_variable].tolist())
+        logg.debug('PCA for fit for HVF_PCA_Neighbors')   
+        adata = anndata.AnnData(X=X[:,[i in self.hvf for i in self.features_used]],dtype=np.float32)
         sc.tl.pca(adata,n_comps=15)
         self.pca = adata.obsm['X_pca']
         X = self.pca[:,0:15].copy()
@@ -581,13 +591,13 @@ class HVF_PCA_Neighbors():
     def get_params(self,**kwargs):
         return self.neighbors.get_params(**kwargs)
 
-def _balance_training_classes(X,y, method=None,max_training=None,in_danger_noise_checker=True):
+def _balance_training_classes(X,y,features_used, method=None,max_training=None,in_danger_noise_checker=True):
     '''Methods to balance classes, using the imblearn package. Consult their documentation for more details'''
     #methods = ["undersample",'resample','oversample','SMOTE','KMeansSMOTE','BorderlineSMOTE',None]  
 
     if in_danger_noise_checker or method in ['SMOTE','BorderlineSMOTE','KMeansSMOTE']:
         logg.debug('begining HVF PCA NEIGHBORS')
-        k_neighbors = HVF_PCA_Neighbors(n_jobs=-1,n_neighbors=10).fit(X)
+        k_neighbors = HVF_PCA_Neighbors(features_used,n_jobs=-1,n_neighbors=10).fit(X)
         
     if in_danger_noise_checker:
         logg.debug('begining in_danger_noise')
@@ -671,15 +681,13 @@ def terminal_names(adata, obs_column = 'classification',confidence_column = 'con
         return adata
     else:
         def percent_mode(x):
-            mode = statistics.mode(x)
+            mode = x.value_counts().index[0]
             return sum(x == mode)/len(x)
-        simple_majority = adata.obs.groupby(voting_reference).agg({obs_column:statistics.mode})[obs_column]
+        simple_majority = adata.obs.groupby(voting_reference).agg({obs_column:lambda x:x.value_counts().index[0]})[obs_column]
         majority = simple_majority[(adata.obs.groupby(voting_reference).agg({obs_column:percent_mode}) > majority_min)[obs_column]]
         adata.obs['simple_majority_voting'] = adata.obs[voting_reference].map(simple_majority)
         adata.obs['majority_voting'] = adata.obs[voting_reference].map(majority).fillna(adata.obs[obs_column])
         return adata
-    
-    
     
 def idenitfy_group_markers(adata,group1, group2=[], batch_val=None, batch='donor', reference='leiden', key_added='groups', filtered=False, plot=True,
                            min_fold_change=2, min_in_group_fraction=.5, max_out_group_fraction=0.25, n_ups=29, n_downs=30, return_df=True):

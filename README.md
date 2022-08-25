@@ -16,23 +16,55 @@ It includes tools for:
 
 ### Environment and Dependencies
 
+MMoCHi requires Python == 3.8
+
+The easiest way to setup an environment is with Anaconda Python distribution in Miniconda or anaconda:
+```
+conda create -n mmochi python=3.8
+```
+To activate this environment in jupyter, you can either activate the conda environment before starting jupyter:
+```
+conda activate mmochi
+jupyter lab
+```
+or you can install your conda environment as an ipykernel, then access it via the "Kernel>Change kernel..." menu
+```
+conda activate mmochi
+conda install ipykernel
+python -m ipykernel install --user --name=mmochi
+conda deactivate
+juptyer lab
+```
+Note that with this option, if you are in jupyter labs <3.4.2, running terminal commands (such as `pip install`) via the notebook will still open a new terminal in the base environment, so editing the enviornment will require opening an new terminal window and running `conda activate mmochi` to enter the environment.
+
+To use the built-in landmark registration functions, you will also need to install scikit-fda:
+```
+conda activate mmochi
+pip install scikit-fda==0.5
+```
+
+
 While not required, the following dependencies can be installed to enable the use of plotting functions for displaying complex hierarchies or trees from a random forest:
 
 ```
-pip install textwrap
+conda activate mmochi
 pip install pydot
 sudo apt-get install graphviz
 ```
 
+
+
 To follow along in our tutorial, we also recommend installing the beta version of pySankey:
 
 ```
+conda activate mmochi
 pip install pySankeyBeta
 ```
 
 Lastly, future versions of MMoCHi will support MuData objects, which can be installed with the following:
 
 ```
+conda activate mmochi
 pip install mudata
 ```
 

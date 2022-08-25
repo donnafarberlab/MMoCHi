@@ -3,7 +3,6 @@ import sklearn
 import sklearn.calibration
 import sklearn.ensemble
 from matplotlib.backends.backend_pdf import PdfPages
-import seaborn as sns
 import pandas as pd
 import random
 import scanpy as sc
@@ -194,7 +193,7 @@ def _plot_confidence(adata,level,key_added='lin',proba_suffix='_proba',hold_out_
     plt.tight_layout()
     return fig, ax1
 
-def plot_important_features(adata,levels,hierarchy,key_added='lin',reference='gt -> class', data_key='protein',hold_out_only=False,batch_key=None,save=None,show=True,title_addition=None):
+def plot_important_features(adata,levels,hierarchy,key_added='lin',reference='gt -> class', data_key='landmark_protein',hold_out_only=False,batch_key=None,save=None,show=True,title_addition=None):
     '''Right now is looking specific for data_key="protein" and is unreliable in other situations'''
     levels = _check_levels(levels,hierarchy,False)
     save = _check_pdf_open(save)
@@ -216,13 +215,14 @@ def plot_important_features(adata,levels,hierarchy,key_added='lin',reference='gt
     _check_pdf_close(save)
     return
 
-def _plot_important_features(adata,level,hierarchy,key_added='lin',reference='gt -> class',hold_out_only=False,data_key='protein'):
+def _plot_important_features(adata,level,hierarchy,key_added='lin',reference='gt -> class',hold_out_only=False,data_key='landmark_protein'):
     '''Right now is looking specific for data_key="protein" and is unreliable in other situations'''
     adata = adata.copy()
     if reference == 'gt -> class':
         adata.obs[reference] = adata.obsm['lin'][level+'_gt'].astype(str) +" -> "+ adata.obsm['lin'][level+'_class'].astype(str)
     df = feature_importances(hierarchy, level)
-    is_protein = (df.Feature.str.contains('uman') | df.Feature.str.contains('Hu_'))
+    is_protein = df.Feature.str.split('_mod_',expand=True)[1] == data_key
+    df.Feature = df.Feature.str.split('_mod_',expand=True)[0]
     df_gene = df[~is_protein]
     df_prot = df[is_protein]
     if data_key is None:
@@ -238,45 +238,6 @@ def _plot_important_features(adata,level,hierarchy,key_added='lin',reference='gt
     sc.pl.stacked_violin(adata2,df_prot.head(25).Feature.tolist(),reference,swap_axes=True,dendrogram=True,ax=axs[1],show=False,use_raw=False)
     return fig, axs
 
-def stacked_density_plots(adata, marker_list, batch='donor', data_key = ['protein','landmark_protein'],data_key_colors=['b','r'],aspect=3, height=.85, save_fig = None):
-    '''Code adapted from https://python.plainenglish.io/ridge-plots-with-pythons-seaborn-4de5725881af'''
-    if batch is None:
-        batch='None'
-        df = pd.DataFrame('All', index=adata.obs_names, columns = [batch])
-    else:
-        df = pd.DataFrame(adata.obs[batch], index=adata.obs_names, columns = [batch])
-    if not pd.api.types.is_list_like(marker_list):
-        marker_list = [marker_list]
-    if not pd.api.types.is_list_like(data_key):
-        data_key = [data_key]
-    markname_full_list = []
-    for marker in marker_list:
-        for dkey in data_key:
-            data, markname_full = utils.get_data(adata,marker,dkey,return_source=True)
-            df[markname_full] = data
-            markname_full_list.append(markname_full)
-    df = df.melt(id_vars = batch)
-    df = df[df.value>0]
-    df.sort_values(['variable',batch],inplace=True)
-    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0), 'axes.linewidth':2})
-    df = df.sample(frac=.01)
-    g = sns.FacetGrid(df, row=batch, hue=batch,palette='tab10', aspect=aspect, height=height,col='variable',
-                     col_order = markname_full_list, row_order = sorted(df[batch].unique()))
-    g.map_dataframe(sns.kdeplot, x='value', fill=True, alpha=.5,clip=(0.001,100),cut=0,gridsize=100, lw=2,bw_adjust=1)
-    g.fig.subplots_adjust(hspace=-.75)
-    g.set_titles('')
-    g.set(yticks=[], ylabel=None, xlabel=f'Expression')
-    g.despine(left=True)
-    left_axes = g.axes.flatten('F')[:len(df[batch].unique())]
-    for left_ax, batch_id in zip(left_axes, sorted(df[batch].unique())):
-        plt.text(x=0,y=0.1,s=batch_id, transform=left_ax.transAxes,ha='right')
-    for i, markname_full in enumerate(markname_full_list):
-        color = data_key_colors[data_key.index(markname_full.split("__")[-1])]
-        plt.text(x=1/(len(markname_full_list))*(i) + .5/(len(markname_full_list)),y=height,s="\n".join(markname_full.split("_")), transform=g.fig.transFigure,ha='center',c=color)
-    if not save_fig is None:
-        g.savefig(save_fig)
-    plt.show()
-    return
 
 
 ### Archived plotting functions ###

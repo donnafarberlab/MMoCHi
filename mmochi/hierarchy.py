@@ -3,7 +3,6 @@ import pandas as pd
 import itertools
 import treelib
 import pickle
-from ipywidgets import Button, Output
 import gc
 import re
 
@@ -427,6 +426,12 @@ class Hierarchy:
                     
         print('Completed!')
         if 'fancy' in mode: 
+            try: 
+                from ipywidgets import Button, Output
+                from IPython.display import display
+
+            except ImportError:
+                raise ImportError('Please install ipywdigets using pip install ipywdigets')
             button = Button(description="Click to run thresholds!")
             output = Output()
             display(button, output)

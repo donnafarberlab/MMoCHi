@@ -68,10 +68,11 @@ def preprocess_adatas(adatas=None, convert_from_10X = True, make_unique = True, 
         if (log_CP_ADT > 0) and (data_key in adata.obsm.keys()) and all(adata.obsm[data_key].astype(int) == adata.obsm[data_key]):
             if not isinstance(log_CP_ADT, int):
                 log_CP_ADT = 1e2
-            adata.obsm[f'{data_key}_counts'] = adata.obsm[data_key].astype('int32').copy()
-            adata.obsm[data_key] = (adata.obsm[data_key].div(adata.obsm[data_key].sum(axis=1)/log_CP_ADT, axis=0))
-            adata.obsm[data_key].apply(np.log1p).astype('float32')
-            adata = adata[adata.obsm[data_key].isna().sum(axis=1)==0]
+            adata.obsm[data_key+"_counts"] = adata.obsm[data_key].copy()
+            adata_prot = anndata.AnnData(X= adata.obsm[data_key])
+            sc.pp.normalize_total(adata_prot, target_sum = log_CP_ADT)
+            sc.pp.log1p(adata_prot)
+            adata.obsm[data_key] = pd.DataFrame(adata_prot.X,columns=adata.obsm[data_key].columns,index=adata.obs_names)
         adatas[i] = adata
     return adatas
 
@@ -100,7 +101,7 @@ def obsm_to_X(adata, data_key='protein'):
     data_key: key in the adata.obsm to convert to the .X of this new adata
     returns new anndata object
     '''
-    adata_new = anndata.AnnData(adata.obsm[data_key],adata.obs,pd.DataFrame(index=adata.obsm[data_key].columns))
+    adata_new = anndata.AnnData(adata.obsm[data_key],adata.obs,pd.DataFrame(index=adata.obsm[data_key].columns),dtype=float)
     return adata_new
 
 

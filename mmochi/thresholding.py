@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from ipywidgets import FloatSlider, Layout
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from sklearn.mixture import GaussianMixture
@@ -92,6 +91,12 @@ def _fancy_interactive_threshold(thresh,maximum):
     maxiumum: int, the maximum value of the marker, serves as the maximum on the slider.
     Returns these sliders so that the fancy resolver may read them eventually.
     The 590px size was determined to be the correct size to match the plotted output of _plot_threshold'''
+    try:
+        from ipywidgets import FloatSlider, Layout
+        from IPython.display import display
+    except ImportError:
+        raise ImportError('Please install ipywdigets using pip install ipywdigets')
+    
     slider1 = FloatSlider(value= max(thresh),min=0,max=maximum,step=0.1,readout=True,layout=Layout(width='600px'))
     slider2 = FloatSlider(min(thresh),min=0,max=maximum,step=0.1,readout=True,layout=Layout(width='600px'))
     display(slider1)
