@@ -89,7 +89,7 @@ pytest
 
 ## Quick Start: Tutorials
 
-- [Integrated Classification]('./docs/Classifier_Demo.ipynb') - Learn how to set up and run MMoCHi on 10X Genomics CITE-Seq!
+- [Integrated Classification](/docs/Classifier_Demo.ipynb) - Learn how to set up and run MMoCHi on 10X Genomics CITE-Seq!
 
 <div class="alert alert-block alert-warning">
 <b>Under Construction</b> More tutorials are on the way, both more basic and more advanced. Eventually hosting on collab may also become possible.
