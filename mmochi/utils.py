@@ -17,6 +17,13 @@ def convert_10x(adata, drop_totalseq = True, data_key = 'protein'):
         adata.obsm[data_key].columns = pd.Series(adata.obsm[data_key].columns).str.split('_TotalSeq',expand=True)[0].values
     return adata
 
+def default_kwargs(kwargs, defaults):
+    '''Helper function to combine lists of kwargs, allowing the left (first argument) to override the defaults (second, right argument)'''
+    for key in defaults.keys():
+        if key not in kwargs.keys():
+            kwargs[key] = defaults[key]
+    return kwargs
+
 def intersect_features(adatas, data_key='protein'):
     '''TODO docstring, and add in logging.'''
     intersection_GEX = list(set.intersection(*(set(val) for val in [adata.var_names for adata in adatas])))
@@ -34,6 +41,7 @@ def preprocess_adatas(adatas=None, convert_from_10X = True, make_unique = True, 
     ''' Function to load and preprocess adatas from either filename/backup_url strings,  TODO docstring, and add in logging.'''
     if isinstance(adatas, anndata.AnnData) or isinstance(adatas,str):
         adatas = [adatas]
+    if isinstance(backup_urls, str):
         backup_urls = [backup_urls]
     if backup_urls is None:
         backup_urls = [None] * len(adatas)
@@ -104,7 +112,6 @@ def obsm_to_X(adata, data_key='protein'):
     adata_new = anndata.AnnData(adata.obsm[data_key],adata.obs,pd.DataFrame(index=adata.obsm[data_key].columns),dtype=float)
     return adata_new
 
-
 def _marker(keyword, cols, allow_multiple = False):
     ''' Internal function for marker name lookup '''
     keyword = keyword.lower()
@@ -150,7 +157,52 @@ def marker(adata, parameter, data_key = 'protein', allow_multiple = False):
     else:
         return _marker(parameter, cols, allow_multiple)
         
+def umap_thresh(adata, h, markers=None, batch_key='donor', data_key='protein', umap_basis='X_umap', cmap=None,**kwargs):
+    if markers is None:
+        all_markers = []
+        for classification in h.get_classifications():
+            for mm in h.tree[classification].data.markers:
+                all_markers.append(mm)
+        markers = list(set(all_markers))
+    
 
+    for mm in markers:
+        if mm.endswith("_lo") or mm.endswith("_hi"):
+            m = mm[:-3]
+        else:
+            m = mm
+        to_del = False
+        try:
+            m = marker(adata,m,data_key)+"_mod_"+data_key
+            adata.obs[m] = adata.obsm[data_key][m.split('_mod_')[0]]
+            to_del = True
+        except:
+            m = marker(adata,m.split('_gex')[0],None)
+        data = get_data(adata,m,data_key)
+        for mask,b in zip(*batch_iterator(adata,batch_key)):
+            t = h.get_threshold_info(mm,None,b,flexible_batch=True)[1]
+
+            if not type(cmap) is str:
+                from matplotlib import cm
+                from matplotlib.colors import ListedColormap
+                n_o = np.ceil(2560*(max(data)-max(t))/max(data))
+                n_g = np.ceil(2560*(max(t)-min(t))/max(data))
+                n_b = np.ceil(2560*min(t)/max(data))
+                orange = cm.get_cmap('Oranges')
+                blue = cm.get_cmap('Blues')
+                green = cm.get_cmap('Greens')
+                newcolors =  list(blue(np.linspace(0, 1, int(n_b)))[int(np.ceil(0.3*n_b)):int(np.ceil(0.860*n_b))]) + \
+                             list(green(np.linspace(0, 1, int(n_g)))[int(np.ceil(0.3*n_g)):int(np.ceil(0.860*n_g))]) + \
+                             list(orange(np.linspace(0, 1, int(n_o)))[int(np.ceil(0.3*n_o)):int(np.ceil(0.860*n_o))])
+                # print([max(data),t,n_b,n_g,n_o])
+                newcolors = np.insert(newcolors,0,np.array([.95,.95,.95,1]),axis=0)
+                cmap = ListedColormap(newcolors)
+
+            sc.pl.embedding(adata[mask],basis = umap_basis,color=m,cmap=cmap,vmax=max(data),vmin=0,title=f'{b} {mm}',**kwargs)
+        if to_del:
+            del adata.obs[m]
+    return
+        
 def get_data(adata: anndata,
              parameter: str,
              preferred_data_key: Optional[str] = None,
@@ -169,7 +221,8 @@ def get_data(adata: anndata,
         string to search the AnnData object for. Append:
         "_gex" to limit checking to the .var,
         "_obs" to limit checking to the .obs,
-        "__" followed by an obsm key/layer name to force checking there.
+        "_mod_" followed by an obsm key/layer name to force checking there.
+        
         Note, these symbols overwrite preferred data key, and it is assumed
         that these symbols are not used elsewhere for variable names
     preferred_data_key
@@ -180,11 +233,10 @@ def get_data(adata: anndata,
     A list of values
     '''
     data = None
-    
-    if "__" in parameter:
+    if "_mod_" in parameter:
         force_preferred = True
-        preferred_data_key = parameter.split('__')[1]
-        parameter = parameter.split('__')[0]
+        preferred_data_key = parameter.split('_mod_')[1]
+        parameter = parameter.split('_mod_')[0]
     if "_gex" in parameter or "_obs" in parameter:
         preferred_data_key = None
 
@@ -211,7 +263,7 @@ def get_data(adata: anndata,
                 
     if not data is None:
         if return_source:
-            return data, parameter+'__'+preferred_data_key
+            return data, parameter+'_mod_'+preferred_data_key
         else:
             return data
     
@@ -291,9 +343,9 @@ def generate_exlcusive_features(adata_list, data_key = None):
             else:
                 features_one = list(adata.var_names) + list(adata.obsm[data_key].columns)
             if features != []:
-                print("intersection taken")
+                logg.print("intersection taken")
                 features = [f for f in features_one if f in features]
             else:
-                print("No itersection attempted")
+                logg.print("No itersection attempted")
                 features = features_one
     return features

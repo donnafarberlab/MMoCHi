@@ -3,6 +3,7 @@ import pandas as pd
 import sklearn 
 import sklearn.ensemble
 import sklearn.neighbors
+from sklearn.calibration import CalibratedClassifierCV
 
 import imblearn
 import random
@@ -22,71 +23,114 @@ def classifier_setup(adata,x_modalities, data_key=None, reduce_features_min_cell
     Next, features can be limited by an external feature set.
     Then, it sorts the resulting feature_names (the columns from the .X and .obsm[data_key]) and csr.matrix, alphabetically, to make the feature order reproducible across runs. 
     If defined, feature limits can be performed so that you can match the expected features of the hierarchy
-    TODO, add in NA checks
-    
+
     adata: anndata object
     data_key: str, key in adata.obsm
     reduce_features_min_cells: int, passed to _reduce_features
-    features_limit: listlike of str
-    '''   
-    print('Setting up...')
+    features_limit: listlike of str or dictonary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
+    '''
+    logg.print('Setting up...')
     if type(x_modalities) is str and x_modalities in adata.var.columns:
         x_modalities = adata.var[x_modalities]
         
-    if data_key is None or features_limit == 'GEX':
-        print('Using .X only')
+    if data_key is None:
+        logg.print('Using .X only')
         X = sp.csr_matrix(adata.X)
         features_used = list(adata.var_names+"_mod_"+x_modalities)
     else:
-        print('Using .X and',data_key)
+        logg.print('Using .X and '+str(data_key))
         X = sp.hstack([adata.X,adata.obsm[data_key]],format='csr')
         features_used = list(adata.var_names+"_mod_"+x_modalities) + list(adata.obsm[data_key].columns+"_mod_"+data_key)
-        
-    print("Reducing features...")
     
+    assert len(features_used) == len(set(features_used)), 'All feature names must be unique...'
+    
+    if type(features_limit) is str and features_limit in adata.var.columns:
+        logg.warn(f"Limiting .X features using {features_limit} column in adata.var...")
+        features_limit = adata.var_names[adata.var[features_limit]] +"_mod_"+ x_modalities
+        features_limit = _limit_features_list_to_dict(features_limit)
+        if not data_key is None:
+            features_limit[data_key] = 'All'
+    logg.print(features_limit)
     X, features_used = _reduce_features(X,features_used, min_cells=reduce_features_min_cells)
-    
-    if not features_limit is None and not features_limit == 'GEX':
-        logg.warn("Limiting features...")
-        feature_mask = np.isin(features_used, feature_names)
-        logg.debug(sum(feature_mask))
-        features_used = np.array(features_used)[feature_mask]
-        logg.debug(X.shape)
-        X=X[:,np.flatnonzero(feature_mask)]
-        logg.debug(X.shape)
-    features_used = np.array(features_used)
-    sort = np.argsort(features_used)
-    X = X[:,sort]
-    logg.debug(features_used)
-    features_used = features_used[sort]
-    
+    X, features_used = _limit_and_realign_features(X, features_used, features_limit)
     return X,list(features_used)
+
+def _limit_features_list_to_dict(features_limit):
+    features_limit = np.array(features_limit)
+    features_limit_mods = np.array([i.split('_mod_')[-1] for i in features_limit])
+    features_limit_names = np.array([i.split('_mod_')[0] for i in features_limit])
+    f_limit = dict()
+    for i in set(features_limit_mods):
+        f_limit[i] = features_limit_names[features_limit_mods==i]
+    return f_limit
+
+def _limit_and_realign_features(X,feature_names,features_limit,assert_all_included = False):
+    if (features_limit is None) or (len(feature_names) == len(features_limit)) & (list(feature_names) == list(features_limit)):
+        features_used = feature_names
+    else:
+        feature_names = np.array(feature_names)
+        if type(features_limit) is str:
+            features_limit = {features_limit:'All'}
+        if type(features_limit) is dict:
+            logg.warn('Converting dict of features_limit to features by modality')
+            f_limit = list()
+            for i in features_limit:
+                if type(features_limit[i]) is str and features_limit[i] == 'All':
+                    new_adds = feature_names[np.char.endswith(feature_names,'_mod_'+i)]
+                else:
+                    new_adds = [j+ '_mod_' + i for j in features_limit[i]]
+                f_limit.extend(new_adds)
+        else:
+            logg.warn('Limiting features using listlike, make sure you include modality information...')
+            f_limit = features_limit
+
+        assert pd.api.types.is_list_like(f_limit), f'features_limit of type {type(f_limit)} not supported'
+        feature_names = np.array(feature_names)
+        feature_mask = np.isin(feature_names, f_limit)
+        logg.debug(f'Limiting features, from {len(feature_names)} to {sum(feature_mask)}')
+        assert sum(feature_mask) > 0, 'Limiting to 0 features invalid, check input...'
+        X=X[:,np.flatnonzero(feature_mask)]    
+        features_used = feature_names[np.flatnonzero(feature_mask)]
+    if sorted(features_used) != list(features_used):
+        logg.info('Resorting to enforce sorted order of features by name')
+        sort = np.argsort(features_used)
+        X = X[:,sort]
+        features_used = np.array(features_used)[sort]
+        logg.debug(f'Features_used are:{features_used}')
+    if assert_all_included:
+        assert len(features_used) == len(features_limit), \
+        f'Not all features in feature_limit availible in feature_names {set(features_limit) - set(features_used)}'
+    return sklearn.utils.check_array(X,accept_sparse=True), list(features_used)    
 
 def _reduce_features(X,feature_names, min_cells=50):
     '''Reduce features that only vary in fewer than min_cells_threshold cells.
     This is a very simplistic feature reduction method. Planned additions include batch based methods and other options
-    
-    X: 2D sp.csr_matrix 
-    feature_names: listlike of feature names 
+
+    X: 2D sp.csr_matrix
+    feature_names: listlike of feature names
     min_cells: minimum cells threshold. Any feature expressed in fewer cells will be excluded.
     '''
     if min_cells > 0:
         num_cells = X.getnnz(axis=0)
-        X=X[:,num_cells>min_cells]
-        feature_names = np.array(feature_names)[num_cells>min_cells]
+        logg.info(f"Removing {sum(num_cells<min_cells)} features lacking expression in a minimum of {min_cells} events...")
+        X=X[:,np.flatnonzero(num_cells>=min_cells)]
+        feature_names = np.array(feature_names)[np.flatnonzero(num_cells>=min_cells)]
     else:
-        print("No min_cells feature reduction...")
+        logg.info("No min_cells feature reduction...")
     return X, feature_names
 
 def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,x_modalities='GEX',
              batch_key=None,retrain=False,plot_thresholds=False,
-             reduce_features_min_cells=25, allow_spike_ins=True,
-             score=False, proba_suffix='_proba', # for UNS. I should honestly fix all of these...
-             resample_method='oversample',X=None,features_used=None,in_danger_noise_checker=True,
-             probability_cutoff=0,max_training=20000,features_limit = None, skip_to = None, end_at = None,
-             n_estimators=100,reference=None, clf_kwargs={}):
+             reduce_features_min_cells=25, allow_spike_ins=True, enforce_hold_out=True,
+             score=False, proba_suffix='_proba', resample_method='oversample',X=None,features_used=None,
+             probability_cutoff=0, max_training=20000,features_limit = None, skip_to = None, end_at = None,reference=None):
     ''' Build a classification from a hierarchy. If the hierarchy has not been trained yet, this function trains the hierarchy AND 
     predicts the dataset. If the hierarchy has been trained, this classifier will skip retraining unless explicitly asked for. 
+    
+    NOTE: many classifier kwargs (for the RandomForest) are defined in the hierarchy. 
+    
+    Below is semi outdated:
+    
     adata: anndata object
     hierarchy: Hierarchy object specifying one or more classification levels and subsets.
     key_added: str, key in the .obsm to store a dataframe of the classifier's results
@@ -103,7 +147,6 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
     batch_key: str, name of a column in adata.obs that corresponds to a batch for use in the classifier
                    
     plot_thresholds: bool, Whether to display thresholds when calculating ground truth
-    score: bool, Whether to plot confusion matricies after each training and classification level
     
     reduce_features_min_cells: int, remove features that are expressed in fewer than this number, passed to _reduce_features
                                     feature reduction can be a very powerful tool for improving classifier performance
@@ -118,8 +161,6 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
     resample_method: str, method to resample ground truth data prior to training, passed to _balance_training_classes
     max_training: int, maxiumum number of events to use in training. Anything more, and training data will be subsampled to meet this number
                        a high max_training increases the computational time it takes to train the model, but may improve reliability
-    n_estimators
-    clf_kwargs: dict, default kwargs (can be overridden by subset kwargs on the hierarchy)
     
     allow_spike_ins: bool, Whether to allow spike ins when doing batched data. Spike ins are performed if a subset is below the minimum threshold
                            within an individual batch, but not the overall dataset. If False, errors may occur if there are no cells of a particular subset
@@ -136,14 +177,14 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
              probabilities of each class for each event.
              Also returns a trained hierarchy with classifiers built into it and a record of thresholds and other settings used.
              
-             Recommended to follow the use of this function with cl.terminal_names().
+             Recommended to follow the use of this function with mmc.terminal_names().
     '''
     if x_data_key is None:
         x_data_key = data_key
     setup_complete = (not X is None) and (not features_used is None)
     if not setup_complete:
         X,features_used = classifier_setup(adata,x_modalities,x_data_key,reduce_features_min_cells,features_limit=features_limit)
-    print(f"Set up complete.\nUsing {len(features_used)} features")
+    logg.print(f"Set up complete.\nUsing {len(features_used)} features")
     
     classifications = hierarchy.get_classifications()
     if skip_to is None:
@@ -175,10 +216,10 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
             subset_mask = total_adata.obsm[key_added][gparent+'_class'] == parent
             assert sum(subset_mask) > 0, f"No events were classified as {parent} in {gparent}_class"
             subset_adata, subset_X = total_adata[subset_mask],total_X[subset_mask.values] 
-            print("Data subsetted on", parent,'in', gparent) 
+            logg.print("Data subsetted on "+ parent+' in '+ gparent) 
             
             if retrain or not hierarchy.has_clf(level):
-                print(f'Running ground truths for {level}...')         
+                logg.print(f'Running ground truths for {level}...')         
                 gt_dfs, gt_batches = [], []
                 for batch_mask, batch in zip(batch_masks, batches):
                     adata = subset_adata[batch_mask[subset_mask]]
@@ -194,15 +235,15 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
                     del adata
                     gc.collect()
 
-                if hierarchy.is_cutoff(level):
-                    print(f'Performing cutoff for {level}...')
+                if hierarchy.get_info(level,'is_cutoff'):
+                    logg.print(f'Performing cutoff for {level}...')
                     df = pd.concat(gt_dfs)
                     df[level+'_class'] = df[level+'_gt']
                     df.loc[df[level+'_class'] == '?',level+'_class'] = np.nan
                 else:
-                    print(f'Preparing training data for {level}...')
+                    logg.print(f'Preparing training data for {level}...')
                     gt_df = pd.concat(gt_dfs)
-                    min_events = hierarchy.get_min_events(level)
+                    min_events = hierarchy.get_info(level,'min_events')
                     
                     if min_events != 0:
                         logg.info(f'Checking subsets for minimum events...')
@@ -222,6 +263,13 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
                             subsets = list(set(subsets)-set(removed_subsets))
                         assert len(gt_df[gt_df[level+'_gt']!=0][level+'_gt'].unique()) > 1, 'Cannot train classifier with only one class'
                         
+                        force_spike_ins = hierarchy.get_info(level,'force_spike_ins')
+                        if enforce_hold_out:# or hierarchy.get_info(level,'calibrate'):
+                            original_gt_df = gt_df.copy()
+                            gt_dfs_holdout = []
+                            for subset in subsets:
+                                gt_dfs_holdout.append(gt_df[gt_df[level+"_gt"]==subset].sample(frac=.9))
+                            gt_df = pd.concat(gt_dfs_holdout)
                         if not batch_key is None:
                             gt_barcodes_batches = []
                             for df, batch in zip(gt_dfs, gt_batches):
@@ -230,20 +278,29 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
                                     vals = df[level+'_gt'].value_counts()
                                     if not subset in vals.index or (vals.loc[subset] < min_events):
                                         if not subset in vals.index:
-                                            events_needed = min_events
+                                            events_needed = min(min_events, sum((gt_df[level+'_gt']==subset) & ~gt_df.index.isin(gt_barcodes_batch))-1) 
                                         else:
-                                            events_needed = min_events - vals.loc[subset]
+                                            events_needed = min(min_events - vals.loc[subset],sum((gt_df[level+'_gt']==subset) & ~gt_df.index.isin(gt_barcodes_batch))-1) 
+                                            events_needed = max(events_needed,0)
                                         if allow_spike_ins:
                                             logg.info(f'Spiking in {events_needed} of {subset} in {batch} to reach {min_events} events')
                                             gt_barcodes_batch += random.sample(list(gt_df[(gt_df[level+'_gt']==subset) & ~gt_df.index.isin(gt_barcodes_batch)].index), events_needed)
                                         else:
                                             assert False, f"{batch_key} of {batch} is missing subset {subset}. Cannot train without spike ins."
+                                    if subset in force_spike_ins:
+                                        events_needed = min(vals.loc[subset]*len(batches),sum((gt_df[level+'_gt']==subset) & ~gt_df.index.isin(gt_barcodes_batch))-1)
+                                        events_needed = max(events_needed,0)
+                                        logg.info(f'Spiking in {events_needed} of {subset} in {batch} as required by force_spike_ins)')
+                                        gt_barcodes_batch += random.sample(list(gt_df[(gt_df[level+'_gt']==subset) & ~gt_df.index.isin(gt_barcodes_batch)].index), events_needed)
                                 gt_barcodes_batches.append(gt_barcodes_batch)
                         else:
                             gt_barcodes_batches = [list(gt_df.index)]
-                            
-                    class_weight = hierarchy.get_class_weight(level)
-                        
+                    if enforce_hold_out:# or hierarchy.get_info(level,'calibrate'):
+                        gt_df = original_gt_df
+                    in_danger_noise_checker, max_training, clf_kwargs, class_weight, f_limit = \
+                    hierarchy.get_info(level,['in_danger_noise_checker', 
+                                              'max_training','clf_kwargs','class_weight', 'features_limit'])
+                    logg.info(clf_kwargs)
                     if class_weight == 'balanced' and not batch_key is None:
                         y_org = gt_df.loc[gt_df[level+'_gt']!='?',level+'_gt'].values
                         classes = np.unique(y_org)
@@ -254,16 +311,15 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
                             # class_weight[subset]= math.log((1/(sum(y_org==subset)/len(y_org))+1),100)
                             class_weight[subset] = (1/(sum(y_org==subset)/len(y_org))) ** (1./2)
                         logg.info(f'Manually made a balanced class_weight: {class_weight}')
-
-                    clf_kwargss = _default_kwargs(clf_kwargs, {'n_jobs':-1, 'bootstrap':True, 'verbose':True})
-                    clf_kwargss = _default_kwargs(hierarchy.get_kwargs(level).copy(),clf_kwargss)
-                    logg.info(clf_kwargss)
-                    print(f'Initializing classifier for {level}...')
-                    clf = sklearn.ensemble.RandomForestClassifier(class_weight=class_weight,
-                                                                  warm_start=(not batch_key is None),
-                                                                  n_estimators=n_estimators,**clf_kwargs)
                     
 
+                    logg.print(f'Initializing classifier for {level}...')
+                    clf = sklearn.ensemble.RandomForestClassifier(class_weight=class_weight,
+                                                                  warm_start=(not batch_key is None),**clf_kwargs)
+
+                    subset_X, f_used = _limit_and_realign_features(subset_X, features_used, f_limit)
+
+                    n_estimators = clf.n_estimators
                     dfs = []
                     train_dfs = []
                     for gt_barcodes_batch, batch in zip(gt_barcodes_batches, gt_batches):
@@ -278,8 +334,8 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
                         dfs.append(df)
                         clf.n_estimators += n_estimators
                         del X, y
-                    clf.n_estimators -= n_estimators                     
-                    hierarchy.set_clf(level,clf,features_used)
+                    clf.n_estimators -= n_estimators
+                    hierarchy.set_clf(level,clf,f_used)
                     
                     df = pd.concat(dfs)
                     df.reset_index(inplace=True)
@@ -293,44 +349,59 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
                     del train_df['training']
                     df[level+'_trains'] = df[level+'_train']
                     del df[level+'_train']
-                print(f"Merging data into adata.obsm['{key_added}']")
+                logg.print(f"Merging data into adata.obsm['{key_added}']")
                 total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
-                                          right_index=True,suffixes=['_error',None])   
-                total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(train_df,how='left',left_index=True,
                                           right_index=True,suffixes=['_error',None]) 
-            if not hierarchy.is_cutoff(level):
+                if not hierarchy.get_info(level,'is_cutoff'):
+                    total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(train_df,how='left',left_index=True,
+                                              right_index=True,suffixes=['_error',None])
+                    if hierarchy.get_info(level,'calibrate'):
+                        logg.print(f'Runing calibration on random forest')
+                        
+                        train_mask = total_adata[subset_mask].obsm[key_added][level+'_trains'].astype(bool).values
+                        gt_mask = (total_adata[subset_mask].obsm[key_added][level+'_gt'] != '?').values
+                        third_mask = np.random.choice([True,False,False],len(gt_mask))
+                        calibration_mask = ~train_mask & gt_mask & third_mask
+                        # calibration_mask = train_mask
+                        # if calibration_mask doesn't include all
+                        y_calibration = total_adata[subset_mask].obsm[key_added][level+'_gt'][calibration_mask]
+                        # if not set(y_calibration.values) == (set(total_adata[subset_mask].obsm[key_added][level+'_gt'].values) - {'?'}):
+                        #     calibration_mask = ~train_mask & gt_mask
+                        #     y_calibration = total_adata[subset_mask].obsm[key_added][level+'_gt'][calibration_mask]
+                        
+                        y_calibration = y_calibration.values
+                        if len(y_calibration)>1000:
+                            cal_method = 'isotonic'
+                        else:
+                            cal_method = 'sigmoid'
+                        logg.info(f'Calibrating with method {cal_method}')
+                        cal_clf = CalibratedClassifierCV(clf, method=cal_method, cv="prefit") # isotonic should perform better with imbalanced classes.
+                        X_calibration = subset_X[calibration_mask]
+                        
+                        cal_clf.fit(X_calibration, y_calibration)
+                        hierarchy.set_clf(level,cal_clf,f_used)
+                        
+            if not hierarchy.get_info(level,'is_cutoff'):
                 df = pd.DataFrame(index=subset_adata.obs_names)
 
-                print(f'Predicting for {level}...')
+                logg.print(f'Predicting for {level}...')
 
-                clf,feature_names = hierarchy.get_clf(level)
-
-                if (len(features_used) != len(feature_names)) or (len(features_used) != sum([1 for i,j in zip(feature_names,features_used) if i==j])):
-                    logg.debug('Realigning features by feature names...')
-                    feature_mask = np.isin(features_used, feature_names)
-                    logg.debug(f'sum(feature_mask) = {sum(feature_mask)}, len(feature_names) = {len(feature_names)}')
-                    assert sum(feature_mask) == len(feature_names), 'Something is wrong with realignment'
-                    subset_X = subset_X[:,feature_mask]
-                      
+                clf,f_names = hierarchy.get_clf(level)
+                subset_X, f_used = _limit_and_realign_features(subset_X, features_used, f_names, True)
+                assert list(f_names) == list(f_used), 'Order of f_names and f_used not matching. Aborting...'
                 full_proba, df[level+proba_suffix], df[level+'_class'] = predict_proba_cutoff(subset_X, clf, probability_cutoff)
 
                 if not proba_suffix is None:
                     total_adata.uns[level+proba_suffix] = pd.DataFrame(full_proba,index=np.array(total_adata_obs_names)[df.index.astype(int)],columns=clf.classes_)
 
-            print(f"Merging data into adata.obsm['{key_added}']")
-            total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
-                                      right_index=True,suffixes=['_error',None])        
-            print('Predicted:')
-            print(df[level+'_class'].value_counts())
+                logg.print(f"Merging data into adata.obsm['{key_added}']")
+                total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
+                                          right_index=True,suffixes=['_error',None])        
+            logg.print('Predicted:')
+            logg.print(df[level+'_class'].value_counts())
             if not reference is None:
                 logg.debug(f"\n{pd.crosstab(df[level+'_class'],subset_adata.obs[reference]).T.to_string()}")
 
-            if score and (level+'_gt' in total_adata.obsm[key_added].keys()) and (level+'_class' in total_adata.obsm[key_added].keys()):
-                plot_confusion(total_adata,level,hierarchy=hierarchy,show=True,key_added=key_added)
-                if not batch_key is None:
-                    plot_confusion(total_adata,level,hierarchy=hierarchy,show=True,key_added=key_added)
-            elif score:
-                logg.warning(f'Could not score {level}')
             del subset_X
             del subset_adata
             gc.collect()
@@ -353,13 +424,6 @@ def classify(adata,hierarchy,key_added='lin',data_key='protein',x_data_key=None,
     total_adata.obs_names = total_adata_obs_names
     gc.collect()
     return total_adata,hierarchy
-
-def _default_kwargs(kwargs, defaults):
-    '''Helper function to combine lists of kwargs, allowing the left (first argument) to override the defaults (second, right argument)'''
-    for key in defaults.keys():
-        if key not in kwargs.keys():
-            kwargs[key] = defaults[key]
-    return kwargs
 
 def predict_proba_cutoff(X,clf, probability_cutoff = 0):
     '''Predict using the classifier, using the probability cutoff as described.
@@ -384,7 +448,7 @@ def predict_proba_cutoff(X,clf, probability_cutoff = 0):
             predictions[i] = "?"
     return full_proba, proba, predictions
         
-def ground_truth(adata,hierarchy,level,data_key,plot=True,reference=None,batch=None,log_reference=True):
+def ground_truth(adata,hierarchy,level,data_key,plot=False,reference=None,batch=None,log_reference=True):
     ''' Thresholding for a list of markers, followed by application of these thresholds to ground truths
     Note, defaults to using ADT data, and will only use GEX if ADT data does not exist, or if
     "_gex" is appended to the gene name. If in neither GEX or ADT, checks obs.
@@ -429,8 +493,8 @@ def ground_truth(adata,hierarchy,level,data_key,plot=True,reference=None,batch=N
                     logg.debug((label,clause))
                     logg.debug('\n{}'.format(adata.obs[temp['mask'].values][reference].value_counts().to_string()))
                 else:
-                    print(label,clause)
-                    print(adata.obs[temp['mask'].values][reference].value_counts())
+                    logg.print([label,clause])
+                    logg.print(adata.obs[temp['mask'].values][reference].value_counts())
                 del temp['mask']
             clause = "temp.loc["+clause+",'names'] = \'"+label+"\'"
             clauses.append(clause)
@@ -447,15 +511,15 @@ def ground_truth(adata,hierarchy,level,data_key,plot=True,reference=None,batch=N
             logg.debug(f"\n{templin[level+'_gt'].value_counts()}")
             logg.debug('\n{}'.format(df.to_string()))
         else:
-            print('Ground Truth calculated...')
-            print(templin[level+'_gt'].value_counts())
-            print(df)
+            logg.print('Ground Truth calculated...')
+            logg.print(templin[level+'_gt'].value_counts())
+            logg.print(df)
     
     return templin
     
 def _get_train_data(X,templin,level,resample_method,max_training,in_danger_noise_checker, features_used):
     '''TODO add info'''
-    print('Choosing training data...') # Randomly select ground truth dataset for training purposes...80% train, 20% held out
+    logg.print('Choosing training data...') # Randomly select ground truth dataset for training purposes...80% train, 20% held out
     templin[level+'_train'] = False
     mask = np.random.choice([True,True,True,True,False],size=sum(templin[level+'_gt'] != '?'))
     templin.loc[templin[level+'_gt'] != '?',level+'_train'] = mask
@@ -475,10 +539,10 @@ def _get_train_data(X,templin,level,resample_method,max_training,in_danger_noise
             X = X[~idxs_remove]
 
     logg.info(f"{len(y)} real cells in training set...")
-    print('Resampling...')
+    logg.print('Resampling...')
     X,y = _balance_training_classes(X,y,features_used, resample_method,max_training=max_training,in_danger_noise_checker=in_danger_noise_checker)
     logg.debug(f'Selected for training: {len(y)}, with {np.unique(y, return_counts=True)}')
-    print(f"Training with {len(y)} events after {resample_method} resampling...")
+    logg.print(f"Training with {len(y)} events after {resample_method} resampling...")
     assert len(set(y)) > 1, 'Must have more than 1 class to classify...'
 
     return X,y
@@ -507,7 +571,7 @@ def _map_training(X, training_X, obs_names):
     return pd.DataFrame.from_dict(dict(zip(obs_names,sample_counts)), orient="index", columns=["training"])
 
 
-def _in_danger_noise(nn_estimator, samples, y, kind="danger"):
+def _in_danger_noise(nn_estimator, samples, y):
         """Estimate if a set of sample are in danger or noise.
         Adapted from BorderlineSMOTE and SVMSMOTE of the imblearn package
         Parameters
@@ -529,7 +593,7 @@ def _in_danger_noise(nn_estimator, samples, y, kind="danger"):
         for target_class in set(y):
             nn_label = (y[x] != target_class).astype(int)
             n_maj = np.sum(nn_label, axis=1) #number of different class adjacent
-
+            
             # Samples are in danger for m/2 <= m' < m
             danger = (n_maj >= (nn_estimator.n_neighbors - 1) / 2) & (n_maj <= nn_estimator.n_neighbors - 4) & (y == target_class)
             # Samples are noise for m = m'
@@ -539,11 +603,12 @@ def _in_danger_noise(nn_estimator, samples, y, kind="danger"):
         # Targets can also be labelled "in danger" if they are clustered in a small cluster that's not well-represented
         leiden = nn_estimator.cluster()
         crosstab = pd.crosstab(leiden,y)
+        logg.debug(crosstab)
         crosstab = ((crosstab.div(crosstab.sum(axis=0),axis=1)) <= .05) & ((crosstab.div(crosstab.sum(axis=1),axis=0)) >= .75) & (crosstab >= 5)
         for i in crosstab:
             for j,k in zip(crosstab[i],crosstab[i].index):
                 if j:
-                    items[(leiden == k) & (y == i) & (items==0)] = 1
+                    items[(leiden == k) & (y == i) & (items==0)] = 2
         return items
     
 class HVF_PCA_Neighbors():
@@ -553,6 +618,7 @@ class HVF_PCA_Neighbors():
         self.modalities = Counter(self.feature_modalities)
         self.neighbors = sklearn.neighbors.NearestNeighbors(**kwargs)
         self.n_neighbors = self.neighbors.n_neighbors
+        self.leiden = None
     def fit(self,X):
         '''TODO implement HVG calculation and pca that does not depend on scanpy'''
         self.hvf = []
@@ -571,6 +637,7 @@ class HVF_PCA_Neighbors():
         X = self.pca[:,0:15].copy()
         del adata
         self.neighbors = self.neighbors.fit(X)
+        self.leiden = None
         return self
     def kneighbors(self,*args,**kwargs):
         return self.neighbors.kneighbors(**kwargs)
@@ -578,19 +645,50 @@ class HVF_PCA_Neighbors():
         return self.neighbors.kneighbors_graph(**kwargs)
     def cluster(self):
         '''TODO implement neighbors and leiden calculations that do not depend on scanpy'''
-        adata = anndata.AnnData(X=self.pca,dtype=np.float32)
-        adata.obsm['X_pca'] = self.pca
-        logg.debug('neighbors for in_danger_noise clustering')
-        sc.pp.neighbors(adata,n_pcs=15)
-        logg.debug('clustering for in_danger_noise')
-        # skip aall this and do adjacency=kneighbors_graph
-        sc.tl.leiden(adata,resolution = .5,n_iterations=1)
-        if len(adata.obs.leiden.unique()) > min(10,len(adata)/100):
-            sc.tl.leiden(adata,resolution = .25,n_iterations=1)
-        return adata.obs.leiden.values
+        if self.leiden is None:
+            adata = anndata.AnnData(X=self.pca,dtype=np.float32)
+            adata.obsm['X_pca'] = self.pca
+            logg.debug('neighbors for in_danger_noise clustering')
+            sc.pp.neighbors(adata,n_pcs=15)
+            logg.debug('clustering for in_danger_noise')
+            # skip aall this and do adjacency=kneighbors_graph
+            sc.tl.leiden(adata,resolution = .5,n_iterations=1)
+            if len(adata.obs.leiden.unique()) > min(10,len(adata)/100):
+                sc.tl.leiden(adata,resolution = .25,n_iterations=1)
+            # sc.tl.umap(adata)
+            # sc.pl.umap(adata,color=['leiden'])
+            self.leiden = adata.obs.leiden.values
+        return self.leiden
     def get_params(self,**kwargs):
         return self.neighbors.get_params(**kwargs)
 
+def borderline_balance(nn_estimator, X, y):
+    leiden = nn_estimator.cluster()
+    crosstab = pd.crosstab(leiden,y)
+    mins = crosstab.div(crosstab.sum(axis=0)).min(axis=1)
+    mults = crosstab.div(crosstab.sum(axis=0)).div(mins,axis=0)
+    leidens = []
+    for i in set(leiden):
+        # If a cluster makes up at least 1% of all classes...
+        if mins[i] > 0.01:
+            # Equalize the representation of that cluster across the board
+            for j in mults.columns: 
+                mult = int(np.ceil(mults.at[i,j]-1))
+                if mult > 0:
+                    mask = (leiden==i)&(y==j)
+                    X = sp.vstack([X]+[X[mask]]*mult,format='csr')        
+                    y = np.hstack([y]+[y[mask]]*mult)
+                    leiden = np.hstack([leiden]+[leiden[mask]]*mult)
+            leidens.append(i)
+            
+    mask = [i in leidens for i in leiden]
+    if sum(mask) < (.5*len(mask)):
+        mult = int(np.ceil((.5*len(mask)/sum(mask))))
+        X = sp.vstack([X]+[X[mask]]*mult,format='csr')        
+        y = np.hstack([y]+[y[mask]]*mult)
+        leiden = np.hstack([leiden]+[leiden[mask]]*mult)
+    return X, y
+            
 def _balance_training_classes(X,y,features_used, method=None,max_training=None,in_danger_noise_checker=True):
     '''Methods to balance classes, using the imblearn package. Consult their documentation for more details'''
     #methods = ["undersample",'resample','oversample','SMOTE','KMeansSMOTE','BorderlineSMOTE',None]  
@@ -598,24 +696,39 @@ def _balance_training_classes(X,y,features_used, method=None,max_training=None,i
     if in_danger_noise_checker or method in ['SMOTE','BorderlineSMOTE','KMeansSMOTE']:
         logg.debug('begining HVF PCA NEIGHBORS')
         k_neighbors = HVF_PCA_Neighbors(features_used,n_jobs=-1,n_neighbors=10).fit(X)
-        
+
     if in_danger_noise_checker:
+        if type(in_danger_noise_checker) is bool:
+            in_danger_noise_checker = 'danger and noise'
         logg.debug('begining in_danger_noise')
         danger_or_noise = _in_danger_noise(k_neighbors,X,y)
-        print(f'Found: {sum(danger_or_noise==2)} noise and {sum(danger_or_noise==1)} in danger of {len(danger_or_noise)} events.')
-        print(pd.crosstab(danger_or_noise,y))
-        if set(y[danger_or_noise != 2]) == set(y):
-            y = y[danger_or_noise != 2]
-            X = X[danger_or_noise != 2]
-            danger_or_noise = danger_or_noise[danger_or_noise != 2]
+        logg.info(f'Found: {sum(danger_or_noise==2)} noise and {sum(danger_or_noise==1)} in danger of {len(danger_or_noise)} events.')
+        logg.debug(pd.crosstab(danger_or_noise,y))
+        if 'noise' in in_danger_noise_checker:
+            if set(y[danger_or_noise != 2]) == set(y):
+                y = y[danger_or_noise != 2]
+                X = X[danger_or_noise != 2]
+                if not k_neighbors.leiden is None:
+                    k_neighbors.leiden = k_neighbors.leiden[danger_or_noise != 2]
+                danger_or_noise = danger_or_noise[danger_or_noise != 2]
+            else:
+                logg.info('Could not remove noise, as it would remove a category')
         else:
-            print('Could not remove noise, as it would remove a category')
-        if sum(danger_or_noise) > 0:
-            X = sp.vstack([X]+[X[danger_or_noise==1]]*5,format='csr')        
-            y = np.hstack([y]+[y[danger_or_noise==1]]*5)
+            logg.print('Not finding noise')
+        if 'danger' in in_danger_noise_checker:
+            if sum(danger_or_noise) > 0:
+                X = sp.vstack([X]+[X[danger_or_noise==1]]*5,format='csr')     
+                y = np.hstack([y]+[y[danger_or_noise==1]]*5)
+                if not k_neighbors.leiden is None:
+                    k_neighbors.leiden = np.hstack([k_neighbors.leiden]+[k_neighbors.leiden[danger_or_noise==1]]*5)
+            else:
+                logg.debug('No "in danger" found')
         else:
-            print('No "in danger" found')
+            logg.debug('Not finding danger')
             
+        if 'rebalance' in in_danger_noise_checker:
+            X, y = borderline_balance(k_neighbors,X,y)
+
     if method == "oversample":
         sample = imblearn.over_sampling.RandomOverSampler()
     elif method == "resample":
@@ -651,31 +764,50 @@ def terminal_names(adata, obs_column = 'classification',confidence_column = 'con
     returns anndata object with a column for classifications and potentially a column for confidences
     
     '''
-    class_names = [x for x in adata.obsm[key_added].columns if "_proba" in x]
-    conf_matrix = adata.obsm[key_added].loc[:,class_names]
+    # ID classification columns
     class_names = [x for x in adata.obsm[key_added].columns if "_class" in x][1:]
     names_matrix = adata.obsm[key_added].loc[:,class_names].astype(str)
-    conf_matrix.columns = names_matrix.columns
+    names_matrix.columns = [i.split('_class')[0] for i in names_matrix.columns]
+    # ID confidence columns
+    conf_names = [x for x in adata.obsm[key_added].columns if "_proba" in x]
+    # Match column names
+    conf_matrix = pd.DataFrame(columns = names_matrix.columns, index = names_matrix.index)
+    proba_matrix = adata.obsm[key_added].loc[:,conf_names]
+    proba_matrix.columns = [i.split('_proba')[0] for i in proba_matrix.columns]
+    conf_matrix = conf_matrix.fillna(proba_matrix)
+    conf_matrix = conf_matrix.fillna(1)
+    conf_matrix[(names_matrix.isna()) | (names_matrix == 'nan')] = np.nan
+    
+    if not confidence_column is None:
+        conf_matrix.columns = names_matrix.columns
+    
     if conf_drops is None:
         conf_drops = -1
+
     if not isinstance(conf_drops, list):
         conf_drops = [conf_drops]*len(names_matrix.columns)
-    confidences = conf_matrix.iloc[:,0]
-    confidences.name = None
-    labels = names_matrix.iloc[:,0]
+    
+    labels = names_matrix.iloc[:,0].copy()
     labels.name = None
-    blacklisted = conf_matrix.iloc[:,0] < 0
+    confidences = conf_matrix.iloc[:,0].copy()
+    confidences.name = None
+    blacklisted = conf_matrix.iloc[:,0].copy() < 0
     blacklisted.name = None
+    # return labels, confidences,blacklisted, conf_matrix, names_matrix
     for col, conf_drop in zip(names_matrix.columns,conf_drops):
-        mask = conf_matrix.loc[:,col]
+        mask = conf_matrix.loc[:,col].copy()
         mask.loc[blacklisted] = -1
+        # mask.loc[names_matrix.loc[:,col].isna()] = np.nan
         mask.name = None
+        # if col == 'cd4cd8':
+        #     return labels, mask, conf_drop, names_matrix, col, conf_matrix, confidences, blacklisted
         labels.loc[mask>conf_drop] = names_matrix.loc[mask>conf_drop,col]
         confidences.loc[mask>conf_drop] = conf_matrix.loc[mask>conf_drop,col]
         blacklisted.loc[mask<conf_drop] = True
 
     adata.obs[obs_column] = labels
-    adata.obs[confidence_column] = confidences
+    if not confidence_column is None:
+        adata.obs[confidence_column] = confidences
     adata.obs[obs_column] = adata.obs[obs_column].astype('category')
     if voting_reference is None:
         return adata

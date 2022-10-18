@@ -52,13 +52,13 @@ pip install pydot
 sudo apt-get install graphviz
 ```
 
-
-
-To follow along in our tutorial, we also recommend installing the beta version of pySankey:
+To follow along in our tutorial, we also recommend installing harmonypy, leidenalg, the beta version of pySankey, and iPyWidgets:
 
 ```
 conda activate mmochi
+pip install harmonypy
 pip install pySankeyBeta
+pip install ipywidgets
 ```
 
 Lastly, future versions of MMoCHi will support MuData objects, which can be installed with the following:
@@ -89,7 +89,7 @@ pytest
 
 ## Quick Start: Tutorials
 
-- [Integrated Classification]('https://github.com/donnafarberlab/MMoCHi/blob/master/docs/Classifier_Demo.ipynb') - Learn how to set up and run MMoCHi on 10X Genomics CITE-Seq!
+- [Integrated Classification](/docs/Classifier_Demo.ipynb) - Learn how to set up and run MMoCHi on 10X Genomics CITE-Seq!
 
 <div class="alert alert-block alert-warning">
 <b>Under Construction</b> More tutorials are on the way, both more basic and more advanced. Eventually hosting on collab may also become possible.
@@ -104,6 +104,5 @@ pytest
 ## Known issues
 
 - `_in_danger_noise` function is currently computationally unoptimized
-- Not all dependencies are necessary, and some need to be made conditional upon function use.
 - No support currently for MuData objects, or other ways to store multimodal data.
 - Log files are currently saved and overwrite immediately upon package loading, with no option to change logging or verbosity.

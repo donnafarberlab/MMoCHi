@@ -20,6 +20,8 @@ def plot_tree(hierarchy, level,tree_number=random.randint(1,10), plotname='tree.
     sudo apt-get install graphviz
     '''
     clf,feature_names = hierarchy.get_clf(level)
+    if type(clf) is sklearn.calibration.CalibratedClassifierCV:
+        clf = clf.base_estimator
     estimator =  clf.estimators_[tree_number]
     print(clf.estimators_[tree_number].tree_.node_count, 'nodes in tree')
     from sklearn.tree import export_graphviz
@@ -47,6 +49,8 @@ def feature_importances(hierarchy, level):
     level: name of the level of interest to pull the tree, must have a trained classifier attached to it
     '''
     clf, feature_names = hierarchy.get_clf(level)
+    if type(clf) is sklearn.calibration.CalibratedClassifierCV:
+        clf = clf.base_estimator
     clf.feature_importances_
     df = pd.DataFrame(feature_names,columns=['Feature'])
     df['Importance'] = clf.feature_importances_
@@ -71,7 +75,7 @@ def _check_levels(levels, hierarchy=None,include_cutoff=False):
         lvls = []
         for level in levels:
                 assert level in hierarchy.get_classifications(), f'{level} is not a valid classification layer'
-                if include_cutoff or not hierarchy.is_cutoff(level):
+                if include_cutoff or not hierarchy.get_info(level,'is_cutoff'):
                     lvls.append(level)
     return lvls
 
@@ -134,23 +138,28 @@ def _plot_confusion(adata,level,hierarchy=None,key_added='lin',hold_out_only=Tru
     statuses = unseen_data[level+'_gt'].unique() 
     (unseen_gt,unseen_cl) = zip(*[(i,j) for i,j in zip(unseen_data[level+'_gt'], unseen_data[level+'_class']) if i in statuses]) 
     fig, ax = plt.subplots(figsize=(4,4))
+    try:
+        labels = hierarchy.subsets_info(level).keys()
+        labels = [i for i in labels if i in unseen_gt]
+    except:
+        labels = sorted(set(unseen_gt))
     try: # Fails on some versions
-        sklearn.metrics.ConfusionMatrixDisplay.from_predictions(unseen_gt,unseen_cl,colorbar=False,ax=ax,xticks_rotation='vertical')
+        sklearn.metrics.ConfusionMatrixDisplay.from_predictions(unseen_gt,unseen_cl,colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels)
     except:
         sklearn.metrics.ConfusionMatrixDisplay(sklearn.metrics.confusion_matrix(unseen_gt,unseen_cl),
-                                               colorbar=False,ax=ax,xticks_rotation='vertical')
+                                               colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels)
     p,r,f,s = sklearn.metrics.precision_recall_fscore_support(unseen_gt,unseen_cl,average='weighted',zero_division=0)
     ax.set_title(f"{level}, F1 = {f:.2f}\nPrecision = {p:.2f}, Recall = {r:.2f}")
     return fig, ax
 
-def plot_confidence(adata,levels,hierarchy=None,key_added='lin',proba_suffix='_proba',hold_out_only=True, batch_key=None,save=None,show=True,title_addition=None):
+def plot_confidence(adata,levels,hierarchy=None,key_added='lin',proba_suffix='_proba',hold_out_only=True, batch_key=None,save=None,show=True,title_addition=None,bins=10):
     '''TODO'''
     levels = _check_levels(levels,hierarchy,False)
     save = _check_pdf_open(save)
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
     for batch_mask, batch in zip(batch_masks, batches):
         for level in levels:
-            fig, ax = _plot_confidence(adata[batch_mask],level,key_added,proba_suffix,hold_out_only)
+            fig, ax = _plot_confidence(adata[batch_mask],level,key_added,proba_suffix,hold_out_only,bins=bins)
             if not title_addition is None:
                 ax.set_title(ax.get_title()+f'\n{title_addition}')
             if not batch_key is None:
@@ -158,7 +167,7 @@ def plot_confidence(adata,levels,hierarchy=None,key_added='lin',proba_suffix='_p
             _save_or_show(save,show)
     _check_pdf_close(save)
     return
-def _plot_confidence(adata,level,key_added='lin',proba_suffix='_proba',hold_out_only=True):
+def _plot_confidence(adata,level,key_added='lin',proba_suffix='_proba',hold_out_only=True,bins=10):
     '''Performs one vs all confidence thresholds. 
     Todo add pdf export support & plot vs dont show
     Code adapted from: https://stackoverflow.com/questions/58863673/calibration-prediction-for-multi-class-classification
@@ -176,18 +185,18 @@ def _plot_confidence(adata,level,key_added='lin',proba_suffix='_proba',hold_out_
         if classification == '?' or pd.isna(classification):
             continue
         df[classification+'_OvA'] = (df[level+'_gt'] == classification)
-        fraction_of_positives, mean_predicted_value = sklearn.calibration.calibration_curve(df[classification+'_OvA'], df[classification], n_bins=10)
-
+        fraction_of_positives, mean_predicted_value = sklearn.calibration.calibration_curve(df[classification+'_OvA'], df[classification], n_bins=bins,strategy='uniform')
+        
         ax1.plot(mean_predicted_value, fraction_of_positives, "s-", label="%s" % (classification, ))
-        ax2.hist(df[classification][df[classification+'_OvA']], range=(0, 1), bins=10, label=classification, histtype="step", lw=2)
-    ax1.set_ylabel("Proportion of samples correctly classified as this class")
-    ax1.set_xlabel("Average percent of forest in support of the classification")
+        ax2.hist(df[classification], range=(0, 1), bins=bins, label=classification, histtype="step", lw=2,log=True)
+    ax1.set_ylabel("Proportion of samples classified as this class")
+    ax1.set_xlabel("Classification confidence")
     ax1.set_ylim([-0.05, 1.05])
     ax1.legend(loc="lower right")
     ax1.set_title('Calibration plots (reliability curve)')
 
     ax2.set_xlabel("")
-    ax2.set_ylabel("Count")
+    ax2.set_ylabel("Count (log scale)")
     ax2.legend(loc="upper center", ncol=2)
 
     plt.tight_layout()

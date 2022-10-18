@@ -119,9 +119,14 @@ def threshold(markname,adata,data_key=None,preset_threshold=None,
     fancy, interactive: bools, Allow the user to input their thresholds (via "fancy" float sliders or the "input" function)
     run, whether to run the thresholding to return thresholded data
     '''
+    if markname.endswith("_lo") or markname.endswith("_hi"):
+        ending = markname[-3:]
+        markname = markname[:-3]
+    else:
+        ending = ''
     data, thresh, msw, markname_full = _calc_threshold(markname,adata,data_key,n,include_zeroes,preset_threshold=preset_threshold, force_model=force_model)
     if plot:
-        _plot_threshold(data, thresh, msw, markname_full,title_addition=title_addition)
+        _plot_threshold(data, thresh, msw, markname_full+ending,title_addition=title_addition)
     if fancy:
         return _fancy_interactive_threshold(thresh, max(data))
     if interactive:

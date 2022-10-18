@@ -113,13 +113,12 @@ def test_classify_defaults(landmarked, test_hierarchy_load_thresholds):
 
     adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
                                    'landmark_protein', batch_key='batch',
-                                   retrain = True,n_estimators=100,
-                                   clf_kwargs = dict(max_depth=20),in_danger_noise_checker=True)
+                                   retrain = True)
     adata = mmc.terminal_names(adata)
     adata = mmc.terminal_names(adata,voting_reference='batch')
-    hierarchy.save('test.hierarchy')
-    h = mmc.Hierarchy(load='test.hierarchy')
+    hierarchy.save('docs/data/test')
+    h = mmc.Hierarchy(load='docs/data/test')
     # assert hierarchy == h, 'Loading does not preserve identity'
-    mmc.plot_confusion(adata,'All',hierarchy,show=True,hold_out_only=False, save='Confusion_plots.pdf')
-    mmc.plot_confidence(adata,'All',hierarchy,show=True, save='Calibration_plots.pdf')
+    mmc.plot_confusion(adata,'All',hierarchy,show=True,hold_out_only=False, save='docs/data/Confusion_plots.pdf')
+    mmc.plot_confidence(adata,'All',hierarchy,show=True, save='docs/data/Calibration_plots.pdf')
     mmc.plot_important_features(adata,'All',hierarchy)

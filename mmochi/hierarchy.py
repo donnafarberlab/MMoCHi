@@ -23,15 +23,33 @@ class Hierarchy:
     
     default_min_events: the fraction of events at a classification level, where the classification is skipped.
     default_class_weight: the default weighing strategy for handling scoring. This can be customized on a per-node basis.
+    default_clf_kwargs: the default key word arguments to send to the random forest function. This can be customized on a per-node basis.
+    default_in_danger_noise_checker:
+    default_is_cutoff:
+    default_features_limit:
+    default_max_training:
+    default_force_spike_ins:
+    default_calibrate:
     load: either None (to initiate a new hierarchy) or a path to a hierarchy to load, note loading a hierarchy overrides other defaults.
     '''
-    def __init__(self, default_min_events=0.001, default_class_weight='balanced_subsample',load=None):
+    def __init__(self, default_min_events=0.001, default_class_weight='balanced_subsample', 
+                       default_clf_kwargs = dict(max_depth=20, n_estimators=100,
+                                                 n_jobs=-1,bootstrap=True,verbose=True),
+                       default_in_danger_noise_checker=True, default_is_cutoff=False, 
+                       default_features_limit=None,default_max_training=20000,default_force_spike_ins=[],default_calibrate=False,load=None):
         if not load is None:
             logg.info(f'Loading classifier from {load}...')
             self._load(load)
         else:
             self.default_min_events = default_min_events
             self.default_class_weight = default_class_weight
+            self.default_in_danger_noise_checker = default_in_danger_noise_checker
+            self.default_clf_kwargs = default_clf_kwargs
+            self.default_features_limit = default_features_limit
+            self.default_is_cutoff = default_is_cutoff
+            self.default_max_training = default_max_training
+            self.default_force_spike_ins = default_force_spike_ins
+            self.default_calibrate = default_calibrate
             self.tree = treelib.Tree()
             self.tree.create_node("All","All",data=Subset("root")) #creating a root node
             self.reset_thresholds()
@@ -43,7 +61,7 @@ class Hierarchy:
         directory: str, path to save file to, default '.' is the local directory'"""
         with open(directory+'/'+name+'.hierarchy','rb') as f:
             self.__dict__ = pickle.load(f)
-        print('Loaded '+name+'.hierarchy')
+        logg.print('Loaded '+name+'.hierarchy')
         return
     
     def save(self,name,directory='.'):
@@ -62,7 +80,7 @@ class Hierarchy:
         copied_self.__dict__ = pickle.loads(pickle.dumps(self.__dict__))
         return copied_self
     
-    def add_classification(self, name,parent_subset,markers,is_cutoff=False,**kwargs):
+    def add_classification(self, name,parent_subset,markers,is_cutoff=None,**kwargs):
         '''Add a classification beneath a subset, checks if it is correctly positioned in the tree
            name: Name of the classification layer
            parent_subset: Name of the subset that should parent this new node, use 'All' for the root node
@@ -91,8 +109,10 @@ class Hierarchy:
         # Allows values to be passed as a dict of args for gt_defs
         if isinstance(values,dict):
             markers = self.tree[parent_classification].data.markers
+            tag = values.copy()
             values = gt_defs(markers, **values)
-            
+        else:
+            tag = None
         # Properly reformat values as a list or lists
         if not isinstance(values, list):
             values = [values]
@@ -104,9 +124,52 @@ class Hierarchy:
         for val in values:
             assert len(markers) == len(val), "Ground truth values must match up to parent's ground truth markers: "+str(markers)
             
+        if tag is None:
+            tag = self._label(name,values,markers)
+        else:
+            tag = self._label_dict(name,tag)
+        
         # Create the node
-        self.tree.create_node(self._label(name,values, markers),name,parent=parent_classification,data=Subset(values,color,**kwargs))
+        self.tree.create_node(tag,name, parent=parent_classification, data=Subset(values,color,**kwargs))
         return
+
+    def _label_dict(self, name,values):
+        """Create a nicely formatted label for the node, to be used with plotting."""
+        tag = name + " ("
+        if 'pos' in values:
+            tag = tag + "+ ".join(values['pos']) + "+ "
+        if 'neg' in values.keys():
+            tag = tag + "- ".join(values['neg']) + "- "
+
+        if 'other' in values:
+            tag = tag + f"== {values[OTHER]}".join(values['other']) + f"== {values[OTHER]} "
+
+        if 'any_of' in values:
+            tag = tag[:-1] + ') and ['
+            if not type(values['any_of'][0]) is list:
+                values['any_of'] = [values['any_of']]
+            if not 'n' in values:
+                values['n'] = 1
+            if not type(values['n']) is list:
+                values['n'] = [values['n']]
+            if (len(values['n']) == 1) and (len(values['any_of'])>1):
+                values['n'] = values['n'] * len(values['any_of'])
+
+            for any_of, n in zip(values['any_of'], values['n']):
+                tag = tag + f'{n} of (' + f"+ ".join(any_of) + f"+) "
+
+                if 'any_ofs_connector' in values and values['any_ofs_connector'] == '|':
+                    tag = tag + 'or '
+                    n_rm = 4
+                else:
+                    tag = tag + 'and '
+                    n_rm = 5
+            tag = tag[:-n_rm] + ']'
+        else:
+            tag = tag[:-1] + ')'
+            
+        tag = re.sub('(\((\[[1-9a-zA-Z]*(\+|\-)))\)','\g<2>',tag)
+        return tag
     
     def _label(self, name,values, markers):
         """Create a nicely formatted label for the node, to be used with plotting."""
@@ -158,25 +221,48 @@ class Hierarchy:
                 tag = tag + ") or ("
             elif len(static) != len(values[0]):
                 tag = tag + ")]"
-        tag = re.sub('(\(([[1-9a-zA-Z]*(\+|\-)))\)','\g<2>',tag)
+        tag = re.sub('(\((\[[1-9a-zA-Z]*(\+|\-)))\)','\g<2>',tag)
         return tag
     
-    def get_min_events(self,name):
-        '''Gets the minimum events of the classifier layer. If not defined, returns the tree default.
-           name: Name of the classification layer to search for
-           returns 
-        '''
-        min_events = self.tree[name].data.min_events
-        if min_events is None:
-            min_events = self.default_min_events
-        return min_events
-    
-    def get_class_weight(self,name):
-        '''Returns the class weight balance of the classifier layer. If not defined, returns the tree default'''
-        class_weight = self.tree[name].data.class_weight
-        if class_weight is None:
-            class_weight = self.default_class_weight
-        return class_weight
+    def flatten_children(self, parent_subset_to_dissolve):
+        '''Unsure how this performs if there are duplicate markers in the classifier levels'''
+        assert parent_subset_to_dissolve in self.tree.expand_tree(parent_subset_to_dissolve), parent_subset_to_dissolve+" is not in hierarchy"
+        # assert (type(self.tree[parent_subset_to_dissolve].data) is Subset), parent_subset_to_dissolve+" is not a valid subset layer"
+
+        children = self.tree.children(parent_subset_to_dissolve)
+        assert len(children) == 1, parent_subset_to_dissolve+" must have only 1 child"
+        siblings = self.tree.siblings(parent_subset_to_dissolve)
+        grandchildren = self.tree.children(children[0].identifier)
+        grandparent = self.tree.parent(parent_subset_to_dissolve)
+        parent_subset_to_dissolve = self.tree[parent_subset_to_dissolve]
+
+        grandparent.data.markers = grandparent.data.markers+children[0].data.markers
+
+        for grandchild in grandchildren:
+            grandchild.tag = f'{grandchild.identifier}{parent_subset_to_dissolve.tag.split(parent_subset_to_dissolve.identifier)[-1]}'+ ' AND' + grandchild.tag.split(grandchild.identifier)[-1]
+            grandchild.data.values = utils.list_tools(parent_subset_to_dissolve.data.values,'*',grandchild.data.values)
+            self.tree.move_node(grandchild.identifier, grandparent.identifier)
+
+        for sibling in siblings:
+            sibling.data.values = utils.list_tools(sibling.data.values,'*',[['any']*len(children[0].data.markers)])
+
+        grandparent.tag = grandparent.tag[:-1]+ "/" + children[0].tag[1:]
+        self.tree.remove_node(parent_subset_to_dissolve.identifier)
+        return
+
+    def get_info(self,name,info_type):
+        if type(info_type) is list:
+            return [self.get_info(name,i) for i in info_type]
+        assert info_type in self.tree[name].data.__dict__.keys(), f'{info_type} not in keys'
+        default_info = self.__dict__['default_'+info_type]
+        if name is None:
+            return default_info
+        info = self.tree[name].data.__dict__[info_type]
+        if info is None:
+            return default_info
+        if type(default_info) is dict and type(info) is dict:
+            info = utils.default_kwargs(info.copy(), default_info.copy())
+        return info
 
     def get_classifications(self):
         '''Return all classification nodes in the tree'''
@@ -211,14 +297,10 @@ class Hierarchy:
     def set_clf(self,name,clf,feature_names):
         '''Sets the classifier and feature_names of a specified classification level (name) feature_names are expected to be list-like'''
         assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
-        assert not self.is_cutoff(name), name+"is a cutoff layer and cannot accept a clf" 
+        assert not self.get_info(name,'is_cutoff'), name+"is a cutoff layer and cannot accept a clf" 
         self.tree[name].data.classifier = clf
         self.tree[name].data.feature_names = feature_names
         return
-    
-    def is_cutoff(self,name):
-        '''Checks whether a given level is a cutoff layer'''
-        return self.tree[name].data.is_cutoff
     
     def has_clf(self,name):
         '''Checks whether a given level has a classifier defined'''
@@ -229,11 +311,6 @@ class Hierarchy:
         '''Gets the classifier and feature names of a given level'''
         assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
         return self.tree[name].data.classifier, self.tree[name].data.feature_names
-    
-    def get_kwargs(self,name):
-        '''Get classifier kwargs defined on a given level'''
-        assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
-        return self.tree[name].data.clf_kwargs
     
     def reset_thresholds(self):
         '''Create an empty thresholds dataframe'''
@@ -283,7 +360,7 @@ class Hierarchy:
             logg.warning('No thresholds dropped')
         return
     
-    def get_threshold_info(self, marker, name, batch=None, flexible_level=True, flexible_batch=False):
+    def get_threshold_info(self, marker, name, batch=None, flexible_level=True, flexible_batch=True):
         '''Identifies threshold information (flexibly for level or batch) TODO, write more'''
         self.thresholds.sort_index(inplace=True)
         x=[]
@@ -342,10 +419,10 @@ class Hierarchy:
             except Exception as e:
                 if verbose:
                     logg.error(f'Failed to add in thresholding at {index}')#,exc_info=1)
-        print('Loaded thresholds.')
+        logg.print('Loaded thresholds.')
         return    
 
-    def run_all_thresholds(self,adata,data_key='protein',batch_key=None,mode='fill in',interactive=True,plot=True,plot_all=True,limit=None,batch_marker_order=False):
+    def run_all_thresholds(self,adata,data_key='protein',batch_key=None,mode='fill in',interactive=True,plot=True,plot_all=True,limit=None,batch_marker_order=False,skip=[]):
         ''' Run thresholding using the thresholding.threshold() function. First search in the data_key, 
         then remove _gex and search the .X, then give up and ask whether to label it as interactive or not.
         adata: anndata object
@@ -365,9 +442,10 @@ class Hierarchy:
         all_markers, all_levels = [], []
         for classification in self.get_classifications():
             for marker in self.tree[classification].data.markers:
-                all_markers.append(marker)
-                all_levels.append(classification)
-        
+                if not marker in skip:
+                    all_markers.append(marker)
+                    all_levels.append(classification)
+
         markers,levels = [],[]
         if 'fill in' in mode or 'rerun all' in mode:
             markers = list(set(all_markers))
@@ -440,7 +518,7 @@ class Hierarchy:
                 with output:
                     for marker,promise, level, batch in fancy_resolution:
                         self.set_threshold(marker,thresholding._fancy_resolver(promise), False, level, batch)
-                    print(f'------------------------\nSave completed\n------------------------')
+                    logg.print(f'------------------------\nThreshold fancy save completed\n------------------------')
 
             button.on_click(on_button_clicked)
 
@@ -463,38 +541,52 @@ class Hierarchy:
         assert not cannot_find, f'Cannot find any of {cannot_find} in adata.X or adata.obsm["{data_key}"]'
         return
     
-    def color_dict(self, new_color_palette = False, mode='ZIGZAG', **kwargs):
+    def color_dict(self, new_color_palette = False, mode='LEAF_DEPTH',default_color='#d3d3d3', **kwargs):
         '''returns a dictionary of colors associated with each subset in the hierarchy
            new_color_palette: False to return the current color_dict, True replaces the hierarchy color system with a new cubehelix palette
            mode: one of "ZIGZAG", "WIDTH", "DEPTH", for the order to label the tree
            **kwargs: sent to sns.cubehelix_palette, I recommend a hue of > 1, and a rot >= 1'''
         if self.tree.nodes:
-            if mode == 'ZIGZAG':
+            if 'ZIGZAG' in mode:
                 all_nodes = list(self.tree.expand_tree(mode=self.tree.ZIGZAG))
-            elif mode == 'WIDTH':
+            elif 'WIDTH' in mode:
                 all_nodes = list(self.tree.expand_tree(mode=self.tree.WIDTH))
-            elif mode == 'DEPTH':
+            elif 'DEPTH' in mode:
                 all_nodes = list(self.tree.expand_tree(mode=self.tree.DEPTH))
             else:
                 assert False, f'mode must be one of "ZIGZAG", "WIDTH", "DEPTH". Not: {mode}'
-            if new_color_palette:
-                import seaborn as sns
-                x = sns.cubehelix_palette(n_colors=len(all_nodes),**kwargs)
-                c = ['#%02x%02x%02x' % tuple(int(ii*255) for ii in i) for i in x]
-                
-            colors = {}
-            for i, n in enumerate(all_nodes):
-                try:
-                    if new_color_palette:
-                        self.tree[n].data.color = c[i]
-                    colors[self.tree[n].identifier] = self.tree[n].data.color
-                except:
-                    pass
+            if 'LEAF' in mode:
+                all_nodes = [i for i in all_nodes if self.tree[i].is_leaf()]
+        else:
+            assert False, f'No nodes in tree'
+            
+        if type(new_color_palette) is list:
+            assert len(new_color_palette) == len(all_nodes)
+            c = new_color_palette
+            new_color_palette = True
+        elif type(new_color_palette) is dict:
+            c = list()
+            for n in all_nodes:
+                c.append(new_color_palette[n] if n in new_color_palette else default_color)
+            new_color_palette = True
+        elif type(new_color_palette) is bool and new_color_palette:
+            import seaborn as sns
+            x = sns.cubehelix_palette(n_colors=len(all_nodes),**kwargs)
+            c = ['#%02x%02x%02x' % tuple(int(ii*255) for ii in i) for i in x]
+        
+        colors = {}
+        for i, n in enumerate(all_nodes):
+            try:
+                if new_color_palette:
+                    self.tree[n].data.color = c[i]
+                colors[self.tree[n].identifier] = self.tree[n].data.color
+            except:
+                pass
         if new_color_palette:
             return
         return colors
     
-    def display(self,plot=False):
+    def display(self,plot=False,return_graph=False,supress_labels=False, node_width = 4, node_height = 1, font_mult=1):
         """Display the tree in a user-friendly format.
         
         If plot is True, requires textwrap and pydot. This can be done with:        
@@ -505,14 +597,19 @@ class Hierarchy:
         if plot:
             import pydot
             import IPython
-            graph = pydot.graph_from_dot_data(self.to_graphviz())[0]
+            graph = pydot.graph_from_dot_data(self.to_graphviz(supress_labels=supress_labels, 
+                                                               node_width=node_width,
+                                                               node_height=node_height,
+                                                               font_mult=font_mult))[0]
             plt = IPython.display.Image(graph.create_png())
             IPython.display.display(plt)
         else:
             self.tree.show()
+        if return_graph:
+            return graph
         return
             
-    def to_graphviz(self):
+    def to_graphviz(self,supress_labels=False, node_width = 4, node_height = 1,font_mult=1):
         """Exports the tree in the dot format of the graphviz software, useful for plotting."""
         import textwrap
 
@@ -522,33 +619,37 @@ class Hierarchy:
                 if n == 'All':
                     continue
                 nid = self.tree[n].identifier
-                label = self.tree[n].tag
+                if supress_labels:
+                    label = nid
+                else:
+                    label = self.tree[n].tag
                 fixedsize = True
                 style='filled'
                 if type(self.tree[n].data) is Classification:
-                    shape = "oval"
-                    height = 1
-                    width = 4
-                    fontsize = 24
+                    shape = "box"
+                    height = node_height
+                    width = node_width
+                    fontsize = 24*font_mult
                     color = '#FFFFFF'
                 else:
-                    label = "\n(".join(label.split("(",1))
-                    label = " (".join(label.split("(",1))
-                    label = ") ".join(label.split(")",1))
-                    label = " [".join(label.split("[",1))
-                    label = "] ".join(label.split("]",1))
-                    label = "\n".join(textwrap.wrap(label, width=30,break_long_words=True,replace_whitespace =False))
-                    label = "(".join(label.split(" (",1))
-                    label = ")".join(label.split(") ",1))
-                    label = "[".join(label.split(" [",1))
-                    label = "]".join(label.split("] ",1))
-                    label = ")".join(label.split(") ",1))
-                    label = "[".join(label.split(" [",1))
-                    label = "]".join(label.split("] ",1))
-                    shape = "box"
-                    height = 1
-                    width = 3.5
-                    fontsize = 16
+                    if not supress_labels:
+                        label = "\n(".join(label.split("(",1))
+                        label = " (".join(label.split("(",1))
+                        label = ") ".join(label.split(")",1))
+                        label = " [".join(label.split("[",1))
+                        label = "] ".join(label.split("]",1))
+                        label = "\n".join(textwrap.wrap(label, width=30,break_long_words=True,replace_whitespace =False))
+                        label = "(".join(label.split(" (",1))
+                        label = ")".join(label.split(") ",1))
+                        label = "[".join(label.split(" [",1))
+                        label = "]".join(label.split("] ",1))
+                        label = ")".join(label.split(") ",1))
+                        label = "[".join(label.split(" [",1))
+                        label = "]".join(label.split("] ",1))
+                    shape = "oval"
+                    height = node_height
+                    width = node_width
+                    fontsize = 16*font_mult
                     color = self.tree[n].data.color+'80'
                 state = (f'"{nid}" [label="{label}", shape={shape}, fixedsize={fixedsize}, fontsize={fontsize},' + 
                         f'width={width}, height={height}, style={style}, fillcolor="{color}", color="black"]')
@@ -586,17 +687,24 @@ class Classification:
     classifier: A stored classifier 
     feature_names: Names of features used in this classifier
     Use custom min_events here to override the fraction in the overall hierarchy'''
-    def __init__(self,markers, min_events=None,class_weight=None,classifier=None, feature_names = None, is_cutoff=False,clf_kwargs={}):
+    def __init__(self,markers, min_events=None,class_weight=None,in_danger_noise_checker=None,classifier=None,features_limit=None,
+                 feature_names = None, is_cutoff=None,max_training=None,force_spike_ins=[], 
+                 calibrate=None, clf_kwargs={}):
         self.markers = markers
-        if is_cutoff:
+        if is_cutoff == True:
             self.is_cutoff = True
         else:
-            self.is_cutoff = False
+            self.is_cutoff = is_cutoff
             self.min_events = min_events
             self.class_weight = class_weight
+            self.in_danger_noise_checker = in_danger_noise_checker
             self.classifier = classifier
             self.clf_kwargs = clf_kwargs
+            self.features_limit = features_limit
             self.feature_names = feature_names
+            self.max_training = max_training
+            self.force_spike_ins = force_spike_ins
+            self.calibrate = calibrate
         return
 
 def gt_defs(marker_list, pos=[], neg=[],other=[], any_of=[],n=1,OTHER=None,POS='pos',NEG='neg',UNDEFINED='any',ANY_OPTIONS=['pos','any'],any_ofs_connector='&'):
@@ -645,8 +753,9 @@ def gt_defs(marker_list, pos=[], neg=[],other=[], any_of=[],n=1,OTHER=None,POS='
     all_markers = list(itertools.chain(pos,neg,any_of_markers,other))
     undefined = [mark for mark in marker_list if not mark in all_markers]
     all_markers = list(itertools.chain(pos,neg,any_of_markers,other,undefined))
-    assert sorted(all_markers) == sorted(marker_list), f'Not all markers used are in marker_list, or there are duplicate definitions for markers within {sorted(all_markers)}'
-    assert len(set(marker_list)) == len(marker_list), 'There are duplicates in marker_list'
+    assert (set(all_markers)-set(marker_list)) == set(), f'There are missing items in all_markers: {set(all_markers)-set(marker_list)}'
+    assert len(set(all_markers)) == len(all_markers), f'There are duplicates in all_markers: {sorted(all_markers)}'
+    assert len(set(marker_list)) == len(marker_list), f'There are duplicates in marker_list: {sorted(marker_list)}'
     markers = []
     constants = []
     for marker in pos:
