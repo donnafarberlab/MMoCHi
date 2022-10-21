@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.1.1' 
+VERSION = '0.1.2' 
 DESCRIPTION = 'MultiMOdal Classifier HIerarchy (MMoCHi)'
 LONG_DESCRIPTION = 'A hierarchical classification system designed for ground-truth thresholding of cell populations on CITE-Seq for training of random forests.'
 
