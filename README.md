@@ -25,6 +25,7 @@ conda create -n mmochi python=3.8
 To activate this environment in jupyter, you can either activate the conda environment before starting jupyter:
 ```
 conda activate mmochi
+conda install -c conda-forge jupyterlab
 jupyter lab
 ```
 or you can install your conda environment as an ipykernel, then access it via the "Kernel>Change kernel..." menu
@@ -54,11 +55,12 @@ pip install pydot
 sudo apt-get install graphviz
 ```
 
-To follow along in our tutorial, we also recommend installing harmonypy, leidenalg, the beta version of pySankey, and iPyWidgets:
+To follow along in our tutorial and use all features, we also recommend installing harmonypy, leidenalg, the beta version of pySankey, and iPyWidgets:
 
 ```
 conda activate mmochi
 pip install harmonypy
+pip install leidenalg
 pip install pySankeyBeta
 pip install ipywidgets
 ```
