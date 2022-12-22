@@ -16,7 +16,7 @@ It includes tools for:
 
 ### Environment and Dependencies
 
-MMoCHi requires Python == 3.8
+MMoCHi requires Python == 3.8, but may also work on later python versions.
 
 The easiest way to setup an environment is with Anaconda Python distribution in Miniconda or anaconda:
 ```
@@ -35,7 +35,8 @@ python -m ipykernel install --user --name=mmochi
 conda deactivate
 juptyer lab
 ```
-Note that with this option, if you are in jupyter labs <3.4.2, running terminal commands (such as `pip install`) via the notebook will still open a new terminal in the base environment, so editing the enviornment will require opening an new terminal window and running `conda activate mmochi` to enter the environment.
+Note that with this option, if you are in jupyter labs <3.4.2, running terminal commands (such as `pip install`) via the notebook will still open a new terminal
+in the base environment, so editing the enviornment will require opening an new terminal window and running `conda activate mmochi` to enter the environment.
 
 To use the built-in landmark registration functions, you will also need to install scikit-fda:
 ```
@@ -44,7 +45,8 @@ pip install scikit-fda==0.5
 ```
 
 
-While not required, the following dependencies can be installed to enable the use of plotting functions for displaying complex hierarchies or trees from a random forest:
+While not required, the following dependencies can be installed to enable the use of plotting functions for displaying complex hierarchies or trees from a 
+random forest:
 
 ```
 conda activate mmochi
@@ -71,38 +73,37 @@ pip install mudata
 ### Installing from source
 Once you have set up the environment, clone this repository and install:
 ```
+conda activate mmochi
 git clone https://github.com/donnafarberlab/mmochi.git
 cd mmochi
 pip install .
 ```
 
 ### Testing your installation
-This will verify a successful install of mmochi. Testing will catch major issues in dependencies. From the mmochi base
-directory do:
+This will verify a successful install of mmochi. Testing will catch major issues in dependencies. From the mmochi base directory do:
 ```
+conda activate mmochi
 conda install pytest
 pytest
 ```
 <div class="alert alert-block alert-warning">
-<b>Testing Incomplete</b> Testing is currently only set up for a few basic functions, more robust testing is on the way! For now, running through the Classifier Demo tutorial will help ensure your environment is correct.
+<b>Testing Incomplete</b> While the pytest covers ~90% of the code, it still does not capture many  use-cases. 
+    Please also run through the demo tutorial to verify your environment is correct.
 </div>
 
 ## Quick Start: Tutorials
+Currently, tutorials are availible as iPython notebooks. Eventually hosting on collab may also become possible.
 
 - [Integrated Classification](/docs/Classifier_Demo.ipynb) - Learn how to set up and run MMoCHi on 10X Genomics CITE-Seq!
 
-<div class="alert alert-block alert-warning">
-<b>Under Construction</b> More tutorials are on the way, both more basic and more advanced. Eventually hosting on collab may also become possible.
-</div>
+- [Fine-tune Landmark Registration](/docs/Landmark_Registration.ipynb) - Manually adjusting the peak identification to improve integration!
+
+- Explore Feature Importances (**In progress**) - What features are most useful for classification?
+
+- Troubleshoot Classification (**In progress**) - What can you do to improve classification performance?
 
 ## Docs
 
 <div class="alert alert-block alert-danger">
-<b>In progress</b> Robust docs are on the way, but for now, most functions' docstrings are well documented. Type hints are also in progress. 
+<b>In progress</b> A ReadTheDocs or alternative is on the way, but for now, most functions have clear docstrings and type hints.
 </div>
-
-## Known issues
-
-- `_in_danger_noise` function is currently computationally unoptimized
-- No support currently for MuData objects, or other ways to store multimodal data.
-- Log files are currently saved and overwrite immediately upon package loading, with no option to change logging or verbosity.
