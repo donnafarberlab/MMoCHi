@@ -16,7 +16,7 @@ It includes tools for:
 
 ### Environment and Dependencies
 
-MMoCHi requires Python == 3.8, but may also work on later python versions.
+MMoCHi is built for Python == 3.8, but may also work on later python versions.
 
 The easiest way to setup an environment is with Anaconda Python distribution in Miniconda or anaconda:
 ```
@@ -45,7 +45,6 @@ conda activate mmochi
 pip install scikit-fda==0.5
 ```
 
-
 While not required, the following dependencies can be installed to enable the use of plotting functions for displaying complex hierarchies or trees from a 
 random forest:
 
@@ -65,13 +64,6 @@ pip install pySankeyBeta
 pip install ipywidgets
 ```
 
-Lastly, future versions of MMoCHi will support MuData objects, which can be installed with the following:
-
-```
-conda activate mmochi
-pip install mudata
-```
-
 ### Installing from source
 Once you have set up the environment, clone this repository and install:
 ```
@@ -89,7 +81,7 @@ conda install pytest
 pytest
 ```
 <div class="alert alert-block alert-warning">
-<b>Testing Incomplete</b> While the pytest covers ~90% of the code, it still does not capture many  use-cases. 
+<b>Testing Incomplete</b> While the pytest covers ~90% of the code, it still does not capture many use-cases. 
     Please also run through the demo tutorial to verify your environment is correct.
 </div>
 
@@ -99,6 +91,8 @@ Currently, tutorials are availible as iPython notebooks. Eventually hosting on c
 - [Integrated Classification](/docs/Classifier_Demo.ipynb) - Learn how to set up and run MMoCHi on 10X Genomics CITE-Seq!
 
 - [Fine-tune Landmark Registration](/docs/Landmark_Registration.ipynb) - Manually adjusting the peak identification to improve integration!
+
+- Improving Ground Truth (**In progress**) - Carefully picking markers and thresholding them can improve ground truth selection!
 
 - Explore Feature Importances (**In progress**) - What features are most useful for classification?
 

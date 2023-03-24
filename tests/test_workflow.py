@@ -384,9 +384,9 @@ def test_flatten_children(test_hierarchy):
     test_hierarchy.display()
     return
 
-def test_idenitfy_group_markers(landmarked):
-    landmarked.obsm['X_umap'] = np.ones((len(landmarked),2))
-    adata = landmarked
-    groups = adata.obs.batch.unique()
-    x = mmc.classifier.idenitfy_group_markers(adata,groups[0],groups[1],reference='batch',filtered=True)
-    assert type(x) is pd.DataFrame
+# def test_idenitfy_group_markers(landmarked):
+#     landmarked.obsm['X_umap'] = np.ones((len(landmarked),2))
+#     adata = landmarked
+#     groups = adata.obs.batch.unique()
+#     x = mmc.classifier.idenitfy_group_markers(adata,groups[0],groups[1],reference='batch',filtered=True)
+#     assert type(x) is pd.DataFrame

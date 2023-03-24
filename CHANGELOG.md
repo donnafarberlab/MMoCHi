@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and after 
 this project will adhere to [Semantic Versioning](http://semver.org/).
  
 # Current version
-## [0.1.3] - 22Dec22
+## [0.1.4] - 09MAR23
 
 To update, replace your repository with a fresh clone, and install using pip, as before.
 
@@ -15,6 +15,51 @@ git clone https://github.com/donnafarberlab/mmochi.git
 cd mmochi
 pip install .
 ```
+
+### Added
+ 
+- Support for predicting on extra-large datasets stored in int64-indexed sparse matrices. (These are not supported by scikit-learn, so they are split into 
+  bite-sized chunks.)
+  
+- Loading saved hierarchies from other directories, using the new `load_dir` argument to the `mmc.Hierarchy()` constructor
+  
+### Changed
+  
+- During ground-truth cleanup, the PCA is now run on ***scaled*** highly variable features, such that highly expressed features, or differences in expression levels
+  between modalities do not dominate.
+  
+- Disable `reduce_features_min_cells` in `mmc.classify` when `retrain == True`, so that features are not filtered out when projecting a classifier onto a new dataset.
+  If highly expressed features need to still be removed, this can be performed prior to inputting into the `mmc.classify` function
+ 
+### Fixed
+
+- `**kwargs` can now be passed through `mmc.plot_confusion` to `sklearn.metrics.ConfusionMatrixDisplay.from_predictions()`
+
+- Added support for recent versions of scikit-fda, which should include support for the current version: `skfda v0.8.1`. 
+
+### Removed
+
+
+  
+### Known Issues and To Do list
+
+- Support for MuData objects. I plan to add a wrapper for mudata object conversion to (and from) an anndata object (just need to create a concat version, where 
+  a col in .var refers to modality, and another col corresponds to any "to_use"-type columns, joined together)
+  
+- Support for >=3 modalities: the .X, and a data_key corresponding to a .obsm location. There is partial support for AnnData 
+  objects with multiple modalities in the .var, but this is not yet supported by the `mmc.utils.get_data` or `mmc.utils.marker` functions, which result in errors 
+  during classification. In the future, there will be a data_key location referring to either the .obsm or to a column in the .var, allowing for a .var 
+  column that specifies many (not just 2) modalities. 
+
+- There is currently no validation of data_keys or feature names, but neither can include the reserved patterns: `_obs`, `_gex`, or `_mod_`.
+
+- Add function for plotting thresholds after pre-gating.
+
+- Create specification file for expected formats for MMoCHi input
+
+# Past versions
+
+## [0.1.3] - 22Dec22
 
 ### Added
  
@@ -100,6 +145,5 @@ pip install .
 
 - There is currently no validation of data_keys or feature names, but they cannot include `_obs`, `_gex`, or `_mod_`. 
 
-# Past versions
-
-Past versions did not include a detailed change log. 
+## Earlier versions
+### Earlier versions did not include a detailed change log. 

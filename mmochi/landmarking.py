@@ -27,14 +27,19 @@ class HiddenPrints:
         sys.stdout.close()
         sys.stdout = self._original_stdout
         
-with HiddenPrints(): # Attempt to hide an import warning of cython failing, which does not seem to affect performance much
+with HiddenPrints(): # Attempt to hide an import warning of cython failing, which does not seem to affect performance
     # https://github.com/SheffieldML/GPy/issues/902
     try:
         from skfda.preprocessing.registration import landmark_registration_warping, invert_warping
         from skfda.representation.grid import FDataGrid
     except ImportError:
-        pass # No longer required to import the package, but is needed to run core functions. Will need to add checking for that
-        #raise ImportError('Please install skfda using pip install scikit-fda==0.5')
+        try:
+            from skfda.preprocessing.registration import landmark_elastic_registration_warping, invert_warping
+            from skfda.representation.grid import FDataGrid
+        except ImportError:
+            pass
+            # No longer required to import the package, but is needed to run core functions. Will need to add checking for that
+            # raise ImportError('Please install skfda using pip install scikit-fda==0.5')
     
 def landmark_register_adts(adata: anndata.AnnData, batch_key: str='donor',
                            data_key: str='protein', key_added: str='landmark_protein',
@@ -305,7 +310,10 @@ def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarra
     else:
         logg.warn('There were no peaks detected. Warning. Setting peak to max of array.')
         location,peaks = [1],[max(y)]
-    warp = landmark_registration_warping(fd,[sorted(peaks)],location=location)
+    try:
+        warp = landmark_registration_warping(fd,[sorted(peaks)],location=location)
+    except:
+        warp = landmark_elastic_registration_warping(fd,[sorted(peaks)],location=location)
     warp = invert_warping(warp)
     ray = warp(ray).reshape(-1)
     # This merge technique might be quite slow. Unsure.

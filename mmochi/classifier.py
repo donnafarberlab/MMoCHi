@@ -227,11 +227,13 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
     retrain: bool
         If the classification level of a hierarchy is already defined, whether to replace that classifier with a retrained one.
         If False, no new classifier would be trained, and that classifier is used for prediction of the data.
+        Overrides reduce_features_min_cells to 0 (as this early stage feature reduction often breaks re-running models).
     plot_thresholds: bool
         Whether to display thresholds when calculating ground truth
     reduce_features_min_cells: int
-        Remove features that are expressed in fewer than this number, passed to _reduce_features. Feature reduction can be a very powerful tool for improving
-        classifier performance. Only used if X and features_used are not provided.
+        Remove features that are expressed in fewer than this number, passed to _reduce_features. 
+        Feature reduction can be a very powerful tool for improving classifier performance. 
+        Only used if X and features_used are not provided, and retrain is True.
     allow_spike_ins: bool
         Whether to allow spike ins when doing batched data. Spike ins are performed if a subset is below the minimum threshold within an individual batch, 
         but not the overall dataset. If False, errors may occur if there are no cells of a particular subset within a batch. Warning, spike ins currently 
@@ -271,6 +273,8 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
         x_data_key = data_key
     setup_complete = (not X is None) and (not features_used is None)
     if not setup_complete:
+        if retrain is False:
+            reduce_features_min_cells = 0
         X,features_used = classifier_setup(adata,x_modalities,x_data_key,reduce_features_min_cells,features_limit=features_limit)
     features_used_X = features_used
     logg.print(f"Set up complete.\nUsing {len(features_used_X)} features")
@@ -551,7 +555,24 @@ def predict_proba_cutoff(X: sp.csr_matrix, clf,
     predictions: np.array
         a 1 x n_events array of str, designating the class called for each group.
     '''
-    full_proba = clf.predict_proba(X)
+    # predict_proba does not function with int64 encoded sparse matrix indicies (caused by large datasets)
+    if X.indices.dtype == np.int64:
+        int_max = np.iinfo(np.int32).max
+        batches = list()
+        for i in range(0, X.shape[0], int_max // X.shape[1]): 
+            batches.append(X[i:(i+int_max//X.shape[1])])
+        for i in batches:
+            i.indices.dtype = np.int32
+    else:
+        batches = [X]
+        
+    full_proba = list()
+    for i in batches:
+        proba = clf.predict_proba(i)
+        full_proba.append(proba)
+
+    full_proba = np.vstack(full_proba)
+    
     proba = full_proba
     n_samples = proba.shape[0]
     class_type = clf.classes_.dtype    # all dtypes should be the same, so just take the first
@@ -559,9 +580,9 @@ def predict_proba_cutoff(X: sp.csr_matrix, clf,
 
     for k in range(n_samples):
         predictions[k] = clf.classes_[np.argmax(proba[k])]
-    
+
     proba = np.max(proba,axis=1)
-    
+
     for i,prob in enumerate(proba):
         if prob < probability_cutoff:
             predictions[i] = "?"
@@ -839,6 +860,7 @@ class HVF_PCA_Neighbors():
                 self.hvf.extend(adata.var_names[adata.var.highly_variable].tolist())
         logg.debug('PCA for fit for HVF_PCA_Neighbors')   
         adata = anndata.AnnData(X=X[:,[i in self.hvf for i in self.features_used]],dtype=np.float32)
+        sc.pp.scale(adata,zero_center=False)
         sc.tl.pca(adata,n_comps=15)
         self.pca = adata.obsm['X_pca']
         X = self.pca[:,0:15].copy()
@@ -1098,7 +1120,7 @@ def idenitfy_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
                            filtered: bool=False, plot: bool=True, 
                            min_fold_change: int=2,min_in_group_fraction: float=.5,
                            max_out_group_fraction: float=0.25, n_ups: int=29,
-                           n_downs: int=30, return_df: bool=True) -> pd.DataFrame:
+                           n_downs: int=30,use_raw: bool=False, return_df: bool=True) -> pd.DataFrame:
     '''
     
     Built on scanpy.tl.rank_genes_groups
@@ -1133,6 +1155,8 @@ def idenitfy_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
         If plot, includes best n_ups values
     n_downs: int
         If plot, includes worst n_downs values
+    use_raw: bool
+        Whether to pull expression for DE analysis from the .raw
     return_df: bool
         Whether to return a df of genes ranked in their ability to characterize group 1
     Returns
@@ -1166,8 +1190,8 @@ def idenitfy_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
     adata.obs.loc[group1_mask,key_added] = 'group1'
     adata.obs.loc[group2_mask,key_added] = 'group2'
     adata.obs[key_added] = adata.obs[key_added].astype('category')
-
-    sc.tl.rank_genes_groups(adata, groupby=key_added, groups=['group1'], reference='group2')
+    
+    sc.tl.rank_genes_groups(adata, groupby=key_added, groups=['group1'], reference='group2', use_raw=use_raw)
     
     if filtered:
         try:

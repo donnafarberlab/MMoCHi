@@ -199,7 +199,7 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
                    hierarchy=None, key_added: str='lin', 
                    hold_out_only: bool=True, batch_key: str=None, 
                    save: str=None, show: bool=True,
-                   title_addition: str=None):
+                   title_addition: str=None, **kwargs):
     '''
     Determine the performance at a single level by creating confusion plots of performance
     
@@ -223,13 +223,14 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
         Whether to show the saved confusion plots
     title_addition: str
         Phrase to add to the title of the confusion plots
+    **kwargs are passed to sklearn.metrics.ConfusionMatrixDisplay.from_predictions()
     '''
     levels = _check_levels(levels,hierarchy,False)
     save = _check_pdf_open(save)
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
     for batch_mask, batch in zip(batch_masks, batches):
         for level in levels:
-            fig, ax = _plot_confusion(adata[batch_mask],level,hierarchy,key_added,hold_out_only)
+            fig, ax = _plot_confusion(adata[batch_mask],level,hierarchy,key_added,hold_out_only, **kwargs)
             if not title_addition is None:
                 ax.set_title(ax.get_title()+f'\n{title_addition}')
             if not batch_key is None:
@@ -238,7 +239,7 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
     _check_pdf_close(save)
     return
 
-def _plot_confusion(adata,level,hierarchy=None,key_added='lin',hold_out_only=True):
+def _plot_confusion(adata,level,hierarchy=None,key_added='lin',hold_out_only=True, **kwargs):
     '''
     Determine the performance at a single level by creating a confusion plot.
     
@@ -254,7 +255,7 @@ def _plot_confusion(adata,level,hierarchy=None,key_added='lin',hold_out_only=Tru
         Key in .obsm, where information on whether a level had a ground truth call or was training data
     hold_out_only: bool
         Whether to only look at the results that were not trained on
-    
+    **kwargs are passed to sklearn.metrics.ConfusionMatrixDisplay.from_predictions()
     Returns
     -------
     fig, ax: Confusion matrix for the given level of the classifier
@@ -270,10 +271,10 @@ def _plot_confusion(adata,level,hierarchy=None,key_added='lin',hold_out_only=Tru
     except:
         labels = sorted(set(unseen_gt))
     try: # Fails on some versions
-        sklearn.metrics.ConfusionMatrixDisplay.from_predictions(unseen_gt,unseen_cl,colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels)
+        sklearn.metrics.ConfusionMatrixDisplay.from_predictions(unseen_gt,unseen_cl,colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels,**kwargs)
     except:
         sklearn.metrics.ConfusionMatrixDisplay(sklearn.metrics.confusion_matrix(unseen_gt,unseen_cl),
-                                               colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels)
+                                               colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels,**kwargs)
     p,r,f,s = sklearn.metrics.precision_recall_fscore_support(unseen_gt, unseen_cl,
                                                               average='weighted', zero_division=0)
     ax.set_title(f"{level}, F1 = {f:.2f}\nPrecision = {p:.2f}, Recall = {r:.2f}")

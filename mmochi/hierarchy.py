@@ -60,11 +60,12 @@ class Hierarchy:
                        default_max_training: int=20000,
                        default_force_spike_ins: List[str]=[], 
                        default_calibrate: bool=True,
-                       load: Optional[str]=None):
+                       load: Optional[str]=None,
+                       load_dir: str='.'):
 
         if not load is None:
-            logg.info(f'Loading classifier from {load}...')
-            self._load(load)
+            logg.info(f'Loading classifier from {load} in {load_dir}...')
+            self._load(load,load_dir)
         else:
             self.default_min_events = default_min_events
             self.default_class_weight = default_class_weight

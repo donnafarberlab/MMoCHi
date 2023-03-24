@@ -1,6 +1,6 @@
 pydot>=1.4.2
 tqdm>=4.64.0
-scikit-fda==0.5
+scikit-fda>=0.5
 seaborn>=0.11.2
 ipython>=8.4.0
 ipywidgets>=7.7.0
