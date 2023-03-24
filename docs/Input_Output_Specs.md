@@ -10,7 +10,7 @@ All inputted expression to MMoCHi should be library-size normalized, and batch c
 
 Currently for multimodal CITE-Seq classifiation, MMoCHi expects the `.X` of the `AnnData` object to contain gene expression, and a `pandas.DataFrame` ([pandas](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html)) in the `.obsm[data_key]` that contains protein expression.
 
-Many of the formatting required can be automated using helper functions (such as `mmc.preprocess_adatas`), although you should manually check to make sure the object is correctly formatted and all data are correctly transformed. 
+Much of the formatting required can be automated using helper functions (such as `mmc.preprocess_adatas`), although you should manually check to make sure the object is correctly formatted and all data are correctly transformed. 
 
 # Detailed specification of inputs
 
@@ -24,7 +24,7 @@ Many of the formatting required can be automated using helper functions (such as
     - Column names must correspond to the feature names, and row names should correspond to the `anndata.AnnData.obs_names`
 
 #### `.obs`
-- The index of the `.obs`, also stored in `anndata.AnnData.obs_names`, should correspond to cell-barcode identitiy. While the actual values of these are not important, they must be unique and a string, not integers.
+- The index of the `.obs`, also stored in `anndata.AnnData.obs_names`, should correspond to cell-barcode identity. While the actual values of these are not important, they must be unique and a string, not integers.
     - For `.obs_names` that are already encoded as integers, this can be changed using `adata.obs_names = adata.obs_names.astype(str)`
     
 - For landmark registration of protein expression or batch-integrated classification, MMoCHi expects a column in the `.obs` delineating batch.
@@ -71,8 +71,8 @@ Many of the formatting required can be automated using helper functions (such as
 
  - As before, the `mmc.Hierarchy` object will contain information about each classification level and its child nodes.
  - While running `mmc.classify()`, the features used, random forest classifier, and any calibration will be saved into the hierarchy object. These can be accessed to identify important features for classification, as demonstrated in [tutorials](/docs/Feature_Importances.ipynb).
-    - The hierarchy object produced by `mmc.classify()` has all items needed to apply this classification on held-out data, or other datasets, by using the parameter `retrain = False` on `mmc.classify()`. Projecting the classification requires that expression information for all features used in the original classification are availible in the held-out dataset.
-    - One should also be cautious to ensure that celltypes present in the training dataset are representative of celltypes present in the held-out data. If applying to equivilent CITE-Seq data, one can also rerun `mmc.classify()` with `retrain = True` to retrain new classifiers at each level of the hierarchy. 
+    - The hierarchy object produced by `mmc.classify()` has all items needed to apply this classification on held-out data, or other datasets, by using the parameter `retrain = False` on `mmc.classify()`. Projecting the classification requires that expression information for all features used in the original classification are available in the held-out dataset.
+    - One should also be cautious to ensure that celltypes present in the training dataset are representative of celltypes present in the held-out data. If applying to equivalent CITE-Seq data, one can also rerun `mmc.classify()` with `retrain = True` to retrain new classifiers at each level of the hierarchy. 
  
 #### `.log` file (if `mmc.log_to_file()` is run before `mmc.classify()`)
 

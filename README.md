@@ -37,7 +37,7 @@ conda deactivate
 juptyer lab
 ```
 Note that with this option, if you are in jupyter labs <3.4.2, running terminal commands (such as `pip install`) via the notebook will still open a new terminal
-in the base environment, so editing the enviornment will require opening an new terminal window and running `conda activate mmochi` to enter the environment.
+in the base environment, so editing the enviornment will require opening a new terminal window and running `conda activate mmochi` to enter the environment.
 
 To use the built-in landmark registration functions, you will also need to install scikit-fda:
 ```
@@ -86,7 +86,9 @@ pytest
 </div>
 
 ## Quick Start: Tutorials
-Currently, tutorials are availible as iPython notebooks. Eventually hosting on collab may also become possible.
+Currently, tutorials are available as iPython notebooks. Eventually hosting on collab may also become possible.
+
+- [Input/Output Specifications](/docs/Input_Output_Specs.md) - Detailed information about the expected inputs for running MMoCHi!
 
 - [Integrated Classification](/docs/Classifier_Demo.ipynb) - Learn how to set up and run MMoCHi on 10X Genomics CITE-Seq!
 
