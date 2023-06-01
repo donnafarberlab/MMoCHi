@@ -15,39 +15,41 @@ from . import thresholding
 
 class Hierarchy:
     '''
-    Class to organize a hierarchy of subsets and to run and store the classifier. The hierarchy is a tree with alternating layers of subset nodes and 
-    classification nodes. Subset nodes define cell populations. The hierarchy initializes with the root subset "All", which represents all events in the 
-    dataset. All subsets except this root originate from a classification. Classification nodes contain a list of markers to be used in setting ground truth, as
-    well as parameters related to the tool's function. Classification nodes normally trigger selection of ground truth events, training of a classifier, and 
-    prediction. If a classification node is labelled a cutoff, it will trigger only a selection of ground truth events to be carried forward. Subset nodes
-    beneath classification nodes define the specific populations to be identified by the classification. 
+    Class to organize a MMoCHi hierarchy. The hierarchy is a tree with alternating layers of subset nodes and classification nodes. Subset nodes
+    define cell populations. The hierarchy initializes with the root subset "All", which represents all events in the dataset. All subsets except
+    this root originate from a classification. Classification nodes contain a list of markers to be used in setting high confidence labeling, as 
+    well as parameters related to the tool's function. Classification nodes normally trigger selection of high confidence events, training of a 
+    classifier, and prediction. If a classification node is a cutoff node, it will trigger only a selection of high confidence events to be 
+    carried forward. Subset nodes beneath classification nodes define the specific populations to be identified by the classification. 
     
-    Paramters
+    Parameters
     ---------
-    default_min_events: int [0,inf], float [0,1]
-        The default minimum number (or fraction of total) of events for a subset to be included in classification, otherwise a subset will be skipped. This can 
-        be customized on a per-node basis.
-    default_class_weight: str
+    default_min_events
+        The default minimum number (or fraction of total) of events for a subset to be included in classification, otherwise a subset will be
+        skipped. This can be customized on a per-node basis.
+    default_class_weight
         The default weighing strategy for handling scoring. This can be customized on a per-node basis.
-    default_clf_kwargs: dict
+    default_clf_kwargs
         The default keyword arguments to send to the random forest function. This can be customized on a per-node basis:
-            In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees in the forest     
-            For more information about other kwargs that can be set, please see: sklearn.ensemble.RandomForestClassifier
-    default_in_danger_noise_checker: bool
-        Whether to check for (and amplify or remove, respectively) in danger and noise events. In danger events are ground truth events at classification 
-        boundaries. Events labelled noise are ground truth events that do not share any nearest neighbors with similar calls, and are thus likely mislabelled.
-    default_is_cutoff: bool
+        In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees in the forest     
+        For more information about other kwargs that can be set, please see: sklearn.ensemble.RandomForestClassifier
+    default_in_danger_noise_checker
+        Whether to check for (and amplify or remove, respectively) in danger and noise events. In danger events are high confidence events at 
+        classification boundaries. Events labeled noise are high confidence events that do not share any nearest neighbors with similar calls, 
+        and are thus likely mislabeled.
+    default_is_cutoff
         The default of whether newly created classification nodes will be treated as cutoffs.
-    default_features_limit: listlike of str or dictonary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
+    default_features_limit
+        Listlike of str or dictonary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
         Specifies the default features allowed for training the classifier.
-    default_max_training: int
+    default_max_training
         Specifies the default maximum amount of events used for training. This greatly affects the speed of training.
-    default_force_spike_ins: list of str
+    default_force_spike_ins
         The default list of subsets to force oversampling/spike ins to, even if the subset has enough events.
-    default_calibrate: bool
-        Default for whether to perform calibration on the prediction confidence of the random forest classifier. Uncalibrated values reflect the % of trees in
-        agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level.
-    load: Optional, str
+    default_calibrate
+        Default for whether to perform calibration on the prediction confidence of the random forest classifier. Uncalibrated values reflect 
+        the % of trees in agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level.
+    load
         Either None (to initiate a new hierarchy) or a path to a hierarchy to load. Note that loading a hierarchy overrides all other defaults.
     '''
     def __init__(self, default_min_events: Union[int,float]=0.001,
@@ -60,12 +62,11 @@ class Hierarchy:
                        default_max_training: int=20000,
                        default_force_spike_ins: List[str]=[], 
                        default_calibrate: bool=True,
-                       load: Optional[str]=None,
-                       load_dir: str='.'):
+                       load: Optional[str]=None):
 
         if not load is None:
-            logg.info(f'Loading classifier from {load} in {load_dir}...')
-            self._load(load,load_dir)
+            logg.info(f'Loading classifier from {load}...')
+            self._load(load)
         else:
             self.default_min_events = default_min_events
             self.default_class_weight = default_class_weight
@@ -81,41 +82,38 @@ class Hierarchy:
             self.reset_thresholds()
         return
 
-    def _load(self, name: str, directory: str='.'):
+    def _load(self, name: str):
         """
         Load a class as a .hierarchy
         
         Parameters
         ----------
-        name: str
+        name
             Name of the file to load (without the .hierarchy, that will be appeneded)
-        directory: str
-            Path to load file from, the default '.' is the local directory
         """
-        with open(directory+'/'+name+'.hierarchy','rb') as f:
+        with open(name+'.hierarchy','rb') as f:
             self.__dict__ = pickle.load(f)
         logg.print('Loaded '+name+'.hierarchy')
         return
     
-    def save(self, name: str, directory: str='.'):
+    def save(self, name: str):
         """
         Save class as a .hierarchy
         
         Parameters
         ----------
-        name: str
+        name
             Name of the file to save (without the .hierarchy, that will be appeneded)
-        directory: str
-            Path to save file to, default '.' is the local directory 
         """
-        with open(directory+'/'+name+'.hierarchy','wb') as f:
+        with open(name+'.hierarchy','wb') as f:
             pickle.dump(self.__dict__,f)
         return
 
     def copy(self):
         '''
-        Returns a hard copy of the hierarchy unlinked to the original.
-        Usage: h2 = h.copy()
+        Performs a hard copy of the hierarchy (completely unlinked to the original).
+        Usage: h2 = h.copy()          
+            
         '''
         copied_self = Hierarchy()
         copied_self.__dict__ = pickle.loads(pickle.dumps(self.__dict__))
@@ -124,19 +122,21 @@ class Hierarchy:
     def add_classification(self, name: str, parent_subset: str,
                            markers: Union[str,List[str]], is_cutoff: Optional[bool]=None, **kwargs):
         '''
-        Add a classification beneath a subset. Checks if it is correctly positioned in the tree before adding.
+        Add a Classification beneath a Subset. Checks if it is correctly positioned in the tree before adding.
         
         Parameters
         ----------
-        name: str
+        name
             Name of the classification layer. This should not contain the following character: *
-        parent_subset: str
+        parent_subset
             Name of the subset that should parent this new node, use 'All' for the root node.
-        markers: list of str or str
-            The markers that will be used to define subsets beneath this classification
-        is_cutoff: optional, bool
+        markers
+            The features that will be used for high confidence thresholding to define subsets beneath this classification. During thresholding, 
+            matching or similar feature names are looked up first in the provided data_key, then in the .var. See mmc.utils.marker for details 
+            on how lookup can be specified.
+        is_cutoff
             Whether to be a cutoff or a classifier node. If None, reference the default.
-        **kwargs: dict
+        **kwargs
             arguments to pass to Classification class constructor
         '''
         assert parent_subset in self.tree.expand_tree(), f"{parent_subset} is not in hierarchy"
@@ -151,34 +151,36 @@ class Hierarchy:
         
     def add_subset(self, name: str, parent_classification: str,
                    values: Union[List[str], List[List[str]], Dict[str,str]], 
-                   color: str='#FFFFFF',**kwargs):
+                   color: str='#FFFFFF', **kwargs):
         '''
-        Add a subset beneath a classifier; checks it seems correctly positioned in tree, then begins to format names etc. by the definitions
+        Add a Subset beneath a Classification. Checks if it is correctly positioned in the tree before adding.
         
         Parameters
         ----------
-        name: str 
+        name
             Name of the subset node. This should not contain the following character: *
-        parent_classification: str
+        parent_classification
             Name of the classification or cutoff node that should parent this new node.
-        values: list of str (e.g. ['pos','any','neg']) or list of list of strings (e.g. [['pos','any','neg'],['any','pos','neg']])
-            The values used to define subsets. Lists of str should be the same length (and order) as the markers of the parent classification node. Lists of
-            lists are joined as logical or's. This can also be provided as a dict, which is sent to gt_defs(), allowing for more complex definitions. 
-            See gt_defs for more details.
-        color: str
+        values
+            list of str (e.g. ['pos','any','neg']) or list of list of strings (e.g. [['pos','any','neg'],['any','pos','neg']])
+            The values used to define subsets. Lists of str should be the same length (and order) as the markers of the parent classification node.
+            Lists of lists are joined as logical or's. This can also be provided as a dict, which is sent to hc_defs(), allowing for more complex 
+            definitions. 
+            See hc_defs for more details.
+        color
             Color associated with the subset when displaying the hierarchy
-        **kwargs: dict
+        **kwargs
             arguments to pass to Subset class constructor
         '''
         assert parent_classification in self.tree.expand_tree(), f"{parent_classification} is not in hierarchy"
         assert (type(self.tree[parent_classification].data) is Classification), f"{parent_classification} is not a valid classification layer"
         assert '*' not in name, f'name ({name}) cannot contain the following character: *'
 
-        # Allows values to be passed as a dict of args for gt_defs
+        # Allows values to be passed as a dict of args for hc_defs
         if isinstance(values,dict):
             markers = self.tree[parent_classification].data.markers
             tag = values.copy()
-            values = gt_defs(markers, **values)
+            values = hc_defs(markers, **values)
         else:
             tag = None
         # Properly reformat values as a list or lists
@@ -190,7 +192,7 @@ class Hierarchy:
         # Do typechecking to make sure the lists are all the proper length
         markers = self.tree[parent_classification].data.markers
         for val in values:
-            assert len(markers) == len(val), "Ground truth values must match up to parent's ground truth markers: "+str(markers)
+            assert len(markers) == len(val), "high confidence values must match up to parent's high confidence markers: "+str(markers)
             
         if tag is None:
             tag = self._label(name,values,markers)
@@ -201,20 +203,19 @@ class Hierarchy:
         self.tree.create_node(tag,name, parent=parent_classification, data=Subset(values,color,**kwargs))
         return
 
-    def _label_dict(self, name: str,values: Dict[str, str]) -> str:
+    def _label_dict(self, name: str, values: Dict[str, str]) -> str:
         """
         Create a nicely formatted label for the node, to be used with plotting. Using a dictionary for cleaner output.
         
         Parameters
         ----------
-        name: str
+        name
             Name of the node or classification layer
-        values: dictionary of str to str
+        values
              Values to add to the label, using a dictionary as input.
         Returns
         -------
-        tag: str
-            Formatted label for the node
+        The formatted label for the node
         """
         tag = name + " ("
         if 'pos' in values:
@@ -254,22 +255,21 @@ class Hierarchy:
         tag = re.sub('(\((\[[1-9a-zA-Z]*(\+|\-)))\)','\g<2>',tag)
         return tag
     
-    def _label(self, name: str,values: Union[List[str], List[List[str]]], markers: List[str]) -> str:
+    def _label(self, name: str, values: Union[List[str], List[List[str]]], markers: List[str]) -> str:
         """
         Create a nicely formatted label for the node, to be used with plotting. Using a list.
 
         Parameters
         ----------
-        name: str
+        name
             Name of the node or classification layer
-        values: List of str or list of list of str
+        values
             Values from classification subset to be added to the label
-        markers: Listlike of str
+        markers
             Names of parent classification markers.
         Returns
         -------
-        tag: str
-            Formatted label for the node
+        Returns the formatted label for the node
         """
         df = pd.DataFrame(values)
         static = []
@@ -324,15 +324,15 @@ class Hierarchy:
     
     def flatten_children(self, parent_subset_to_dissolve: str):
         '''
-        Flattens child nodes of the hierarchy. The direct child classification information is moved to the same layer as the parent and their parent
-        classification is dissolved. If parents and children have conflicting definitions, edge-case behavior may lead to the generation of nodes with duplicate
-        markers (which is otherwise prevented), but should still function. 
-        This should be done before setting thresholds.
+        Flattens child nodes of the hierarchy. The direct child classification information is moved to the same layer as the parent and their 
+        parent classification is dissolved. If parents and children have conflicting definitions, edge-case behavior may lead to the generation 
+        of nodes with duplicate markers (which is otherwise prevented), but should still function. This should be done before setting thresholds.
+        
         Parameters
         ----------
-        parent_subset_to_dissolve: str
-            parent classification to dissolve
-       '''
+        parent_subset_to_dissolve
+            The subset that is parent to the classification layer being dissolved.
+        '''
         assert parent_subset_to_dissolve in self.tree.expand_tree(parent_subset_to_dissolve), parent_subset_to_dissolve+" is not in hierarchy"
         # assert (type(self.tree[parent_subset_to_dissolve].data) is Subset), parent_subset_to_dissolve+" is not a valid subset layer"
 
@@ -348,30 +348,32 @@ class Hierarchy:
         for grandchild in grandchildren:
             grandchild.tag = f'{grandchild.identifier}{parent_subset_to_dissolve.tag.split(parent_subset_to_dissolve.identifier)[-1]}'+ ' AND' + \
                              grandchild.tag.split(grandchild.identifier)[-1]
-            grandchild.data.values = utils.list_tools(parent_subset_to_dissolve.data.values,'*',grandchild.data.values)
+            grandchild.data.values = utils._list_tools(parent_subset_to_dissolve.data.values,'*',grandchild.data.values)
             self.tree.move_node(grandchild.identifier, grandparent.identifier)
 
         for sibling in siblings:
-            sibling.data.values = utils.list_tools(sibling.data.values,'*',[['any']*len(children[0].data.markers)])
+            sibling.data.values = utils._list_tools(sibling.data.values,'*',[['any']*len(children[0].data.markers)])
 
         grandparent.tag = grandparent.tag[:-1]+ "/" + children[0].tag[1:]
         self.tree.remove_node(parent_subset_to_dissolve.identifier)
         return
 
-    def get_info(self,name: str,info_type: Union[List[str], str, dict]) -> Union[str, List[str]]:
+    def get_info(self, name: str, info_type: Union[List[str], str, dict]) -> Union[str, List[str], float, bool]:
         '''
-        Gets the information for a specific node or classification layer of the hierarchy.
+        Gets specified information for a node in the hierarchy. Works with both Classification and Subset nodes.
 
         Paremters
         ---------
-        name: str
+        name
             Node to get information from, if none gets general information on the hierarchy
-        info_type: list of str, str, or dict
+        info_type
             What type of information to get for the node
+        
         Returns
         -------
-        info: str or list of str
+        info
             Information on the inputted node
+        
         '''
         if type(info_type) is list:
             return [self.get_info(name,i) for i in info_type]
@@ -383,12 +385,12 @@ class Hierarchy:
         if info is None:
             return default_info
         if type(default_info) is dict and type(info) is dict:
-            info = utils.default_kwargs(info.copy(), default_info.copy())
+            info = utils._default_kwargs(info.copy(), default_info.copy())
         return info
 
-    def get_classifications(self):
+    def get_classifications(self) -> List[str]:
         '''
-        Return all classification (or cutoff) nodes in the tree
+        Provides all a list of all classification (or cutoff) nodes in the tree.
         '''
         nodes = []
         for node in self.tree.nodes.values():
@@ -396,18 +398,36 @@ class Hierarchy:
                 nodes.append(node.identifier)
         return nodes
     
-    def subsets_info(self,name: str) -> Dict[str, List[int]]:
+    def subsets_info(self, name: str) -> Dict[str, List[int]]:
         '''
-        Returns a dict containing each subset beneath a classification layer and the ground truth values associated with them
+        Provides infomration of the subsets beneath a classification layer and their high confidence threshold defintiions.
+
+        Parameters
+        ----------
+        name
+            The name of the classification level to query
+
+        Returns
+        -------
+            A dict containing each subset the given classification layer as keys and the high confidence values associated with them.
         '''
         info = {}
         for node in self.tree.children(name):
             info[node.identifier] = node.data.values
         return info            
         
-    def classification_parents(self,name: str) -> tuple:
+    def classification_parents(self, name: str) -> Tuple[str,str]:
         '''
-        Returns parent and grandparent information about a classifier node which can be used for subsetting.
+        Provides information about a node's parent and grandparent information. This can be useful for subsetting.
+        
+        Parameters
+        ----------
+        name
+            The name of the classification level to query
+
+        Returns
+        -------
+        A tuple of strings for the parent followed by the grandparent.
         '''
         parent = self.tree.parent(name)
         if parent.identifier != "All":
@@ -416,17 +436,39 @@ class Hierarchy:
             grandparent = parent
         return parent.identifier, grandparent.identifier
     
-    def classification_markers(self,name: str) -> Tuple[List[str], Dict[str, List[int]]]:
+    def classification_markers(self, name: str) -> Tuple[List[str], Dict[str, List[int]]]:
         '''
-        Returns markers used and gt information for each subset beneath the classification
+        Provides markers used at one Classification node and the high confidence thresholding definitions for each of its subsets. 
+
+        Parameters
+        ----------
+        name
+            The name of the classification level to query
+
+        Returns
+        -------
+        markers
+            The list of markers used
+        hc_subsets
+            The list of definitions for each subset
         '''
         markers = self.tree[name].data.markers
-        gt_subsets = self.subsets_info(name)
-        return markers,gt_subsets
+        hc_subsets = self.subsets_info(name)
+        return markers,hc_subsets
     
-    def set_clf(self,name: str,clf,feature_names: List[str]):
+    def set_clf(self, name: str, clf, feature_names: List[str]):
         '''
         Sets the classifier and feature_names of a specified classification level (name)
+        
+        Parameters
+        ----------
+        name
+            The name of the classification level to add this information to
+        clf
+            An sklearn machine learning classifier to store in the hierarchy and use for prediction
+        feature_names
+            A list of all features used for classification
+        
         '''
         assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
         assert not self.get_info(name,'is_cutoff'), name+"is a cutoff layer and cannot accept a clf" 
@@ -436,16 +478,35 @@ class Hierarchy:
     
     def has_clf(self, name: str) -> bool:
         '''
-        Checks whether a given level has a classifier defined
+        Checks whether a given level has a trained classifier defined.
+        
+        Parameters
+        ----------
+        name
+            The name of the classification level to query
+        Returns
+        -------
+        A boolean for whether the node has a classifier defined.             
         '''
         assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
         if self.tree[name].data.is_cutoff:
             return False
         return not self.tree[name].data.classifier is None
     
-    def get_clf(self,name: str, base: bool=False):
+    def get_clf(self, name: str, base: bool=False):
         '''
-        Gets the classifier and feature names of a given level. If base, returns base estimator
+        Gets the classifier and feature names of a given level. If base, returns base estimator 
+        
+        Parameters
+        ----------
+        name
+            The name of the classification level to query
+        base
+            Whether to always return the base estimator (RandomForest) or potentially return the CalibrationCV if calibration was performed
+            
+        Returns
+        -------
+        A boolean for whether the node has a classifier defined.            
         '''
         assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
         clf = self.tree[name].data.classifier
@@ -461,28 +522,30 @@ class Hierarchy:
         return clf, self.tree[name].data.feature_names
     
     def reset_thresholds(self):
-        '''Create an empty thresholds dataframe'''
+        '''
+        Creates an empty thresholds dataframe
+        '''
         self.thresholds = pd.DataFrame(columns=['minimum','maximum','interactive'])
         self.thresholds.index=pd.MultiIndex.from_frame(pd.DataFrame(columns=['marker','name','batch']))
         return
     
-    def set_threshold(self, marker: str, thresholds: Tuple[int], interactive: bool,
+    def set_threshold(self, marker: str, thresholds: Tuple[float], interactive: bool,
                       name: Optional[str]=None, batch: Optional[str]=None):
         '''
-        Set the threshold
+        Sets a threshold in the Hierarchy for one marker
         
         Parameters
         ----------
-        marker: str
-            Node to get information from, if none gets general information on the hierarchy
-        thresholds: List like of ints
+        marker
+            Marker to set threshold on
+        thresholds
             List of of thresholds to use for that node
-        interactive: bool
+        interactive
             Whether to interactively set thresholds
-        name: optional, str
-            Name of the classification layer to define on.
-        batch: optional, str
-            Batch to threshold
+        name
+            Name of the classification layer to define on. Use None for all.
+        batch
+            Batch to threshold. Use None for all.
         '''
         assert pd.isna(name) or name in self.get_classifications(), f'{name} is not a valid classification layer'
         if pd.isna(name):
@@ -503,7 +566,14 @@ class Hierarchy:
     
     def generate_batchless_thresholds(self, name: str=None, batch: str=None):
         '''
-        Set the thresholds, removing batch-related thresholds, and averaging across batches
+        Sets thresholds, removing any that are batch-specific, and averages those across batches
+        
+        Parameters
+        ----------
+        name
+            Name of the classification layer to define on. Use None for all.
+        batch
+            Should be set to None.
         '''
         assert pd.isna(name) or name in self.get_classifications(), f'{name} is not a valid classification layer'
         for marker in set(list(zip(*self.thresholds.index))[0]):
@@ -516,6 +586,16 @@ class Hierarchy:
     def drop_threshold(self, marker: str, name: Optional[str]=None, batch: Optional[str]=None):
         '''
         Remove thresholds from the database. Pass slice(None) to drop all thresholds matching the other keys.
+        
+
+        Parameters
+        ----------
+        marker
+            Marker to set thresholds on.
+        name
+            Name of the classification layer to remove thresholds for. Use slice(None) for all.
+        batch
+            Batch to remove thresholds for. Use slice(None) for all.
         '''
         try:
             if pd.isna(name) or pd.isna(batch):
@@ -534,20 +614,21 @@ class Hierarchy:
                            batch: str=None, flexible_level: bool=True,
                            flexible_batch: bool=True) -> Tuple[bool, Tuple[float, float]]:
         '''
-        Identifies and returns threshold information (flexibly for level or batch)
+        Identifies and returns threshold information, with support for flexibly for level or batch. 
         
         Parameters
         ----------
-        marker: str
+        marker
             Marker to find thresholding information on
-        name: str 
+        name
             Name of the node in the hierarchy
-        batch: str
+        batch
             Batch of the marker to find information on
-        flexible_level: bool
+        flexible_level
             Whether to search any level, if the specified level lacks information
-        flexible_batch: bool
+        flexible_batch
             Whether to search any batch, if the specified batch lacks information
+            
         Returns
         -------
         interactive, (minimum,maximum)
@@ -582,15 +663,15 @@ class Hierarchy:
             x = x.iloc[0]
         return x.interactive, (x.minimum,x.maximum)
     
-    def save_thresholds(self,save_path: str=None, non_destructive: bool=True):
+    def save_thresholds(self, save_path: str=None, non_destructive: bool=True):
         '''
         Saves thresholds as a .csv file, non_desctructive saving loads in the old file and appends new definitions onto it
 
         Parameters
         ----------
-        save_path: str
+        save_path
             Filepath where one is saving the thresholding information 
-        non_destructive: bool
+        non_destructive
             Whether to append the current file with new thresholding information or whether to overwrite any existing file
         '''
         if save_path is None:
@@ -599,7 +680,12 @@ class Hierarchy:
             df = self.thresholds.copy()
             if non_destructive:
                 try:
-                    df2 = pd.read_csv(save_path).set_index(['marker','name','batch'])
+                    df2 = pd.read_csv(save_path)
+                    if not ('marker' in df.columns and 'name' in df.columns and 'batch' in df.columns):
+                        df2 = df2.rename({'Unnamed: 0':'marker',
+                                          'Unnamed: 1':'name',
+                                          'Unnamed: 2':'batch'},axis='columns')
+                    df2 = df2.set_index(['marker','name','batch'])
                     for i in df.index:
                         try:
                             df2 = df2.drop(i)
@@ -612,13 +698,25 @@ class Hierarchy:
             df.to_csv(save_path)
         return
     
-    def load_thresholds(self,df: Union[str, pd.DataFrame],verbose: bool=False):
+    def load_thresholds(self, df: Union[str, pd.DataFrame], verbose: bool=False):
         '''
-        Loads in thresholds from a .csv file
-        Expects columns for marker, name, batch, maximum, minimum, and interactive
+        Loads in thresholds from a `.csv` file.
+
+        Parameters
+        ----------
+        df
+            A reference to a dataframe with columns for marker, name, batch, maximum, minimum, and interactive
+            This should be the exact number of columns. 
+        verbose
+            Whether to print log messages during loading.
         '''
         if type(df) == str:
-            df = pd.read_csv(df).set_index(['marker','name','batch'])
+            df = pd.read_csv(df)
+            if not ('marker' in df.columns and 'name' in df.columns and 'batch' in df.columns):
+                df = df.rename({'Unnamed: 0':'marker',
+                                'Unnamed: 1':'name',
+                                'Unnamed: 2':'batch'},axis='columns')
+            df = df.set_index(['marker','name','batch'])
         for index, row in df.iterrows():
             try:
                 self.set_threshold(index[0], (row.maximum, row.minimum), row.interactive, index[1], index[2])
@@ -629,34 +727,35 @@ class Hierarchy:
         return    
 
     def run_all_thresholds(self, adata: anndata.AnnData,
-                           data_key: str='protein', batch_key: str=None,
+                           data_key: str=utils.DATA_KEY, batch_key: str=None,
                            mode: str='fill in', interactive: bool=True,
                            plot: bool=True, limit: Optional[Union[str, List[str]]]=None, 
                            batch_marker_order: bool=False, skip: List[str]=[]):
         '''
-        Run thresholding using the thresholding.threshold() function. First searches marker in the data_key, then removes _gex
-        and searches the .X. If marker is not found, gives up and ask whether to label it as interactive or not.
+        Run thresholding using the `thresholding.threshold()` function. First uses `mmc.get_data` to search for marker.
+        If marker is not found, gives up and ask whether to label it as interactive or not.
         
         Parameters
         ----------
-        adata: anndata object
-        data_key: str
+        adata
+        data_key
             obsm location to probe for other modalities beyond the .X
-        batch_key: str
+        batch_key
             If none, don't run with batch. Otherwise, the batch on which to threshold 
-        mode: str ['fill in','rerun all', 'rerun specified','every level'] 
+        mode
+            One of: ['fill in','rerun all', 'rerun specified','every level'] 
             Whether to fill in empty holes with broad thresholds, rerun all globals, rerun all thresholds that have been
             specified (and not fill in new ones), or rerun every level separately. Add "fancy" to the mode name to trigger
             fancy plots (interactive widgets).
-        interactive: bool
+        interactive
             Whether to run thresholding.threshold() interactively or not
-        plot: bool
+        plot
             Whether to display a plot when running thresholding.threshold()
-        limit: optional, str or list of str
+        limit
             If specified, only thresholds marker(s) included in the limit
-        batch_marker_order: bool
+        batch_marker_order
             Whether to order by batch first or marker first (as the outer loop). If true, marker is the outer loop.
-        skip: list of str
+        skip
             Markers to skip for thresholding
         '''
         all_markers, all_levels = [], []
@@ -744,16 +843,16 @@ class Hierarchy:
     
     def get_all_markers(self) -> Set[str]:
         '''
-        Returns a list of all the markers in the hierarchy
+        Provides a list of all the markers used for high confidence thresholding.
         '''
         all_markers = []
         for name in self.get_classifications():
             all_markers.extend(self.classification_markers(name)[0])
         return set(all_markers)
 
-    def check_all_markers(self, adata: anndata.AnnData, data_key: Optional[str]=None):
+    def check_all_markers(self, adata: anndata.AnnData, data_key: Optional[str]=utils.DATA_KEY):
         '''
-        Checks if any of the markers in all_markers are not in adata.X or .obsm[data_key]
+        Asserts all markers identified by `.get_all_markers()` are in adata.X or .obsm[data_key].
         '''
         all_markers = self.get_all_markers()
         cannot_find = []
@@ -769,25 +868,28 @@ class Hierarchy:
                    mode: str='LEAF_DEPTH', default_color: str='#d3d3d3',
                    **kwargs) -> Dict[str, str]:
         '''
-        Returns a dictionary of colors associated with each subset in the hierarchy
+        Provides a dictionary of colors associated with each subset in the hierarchy
         
         Parameters
         ----------
-       new_color_palette: bool
+        new_color_palette
            False to return the current color_dict
            True replaces the hierarchy color system with a new cubehelix palette
-       mode: str
-           One of "ZIGZAG", "WIDTH", "DEPTH", for the order to label the tree
-       default_color: str
+        mode
+           One of ["ZIGZAG", "WIDTH", "DEPTH"]
+           The order to label the tree
+        default_color
            Hex code of the color default, for any subsets not already defined in the color palette.
-       **kwargs: dict
+        **kwargs
            Sent to sns.cubehelix_palette, a hue of > 1, and a rot >= 1 is recommended
            
         Returns
         -------
         colors: Dict of subset of hierarchy to colors
             A dictionary of the colors for each subset of the hierarchy
+
         '''
+        
         if self.tree.nodes:
             if 'ZIGZAG' in mode:
                 all_nodes = list(self.tree.expand_tree(mode=self.tree.ZIGZAG))
@@ -835,24 +937,19 @@ class Hierarchy:
         """
         Display the tree in a user-friendly format.
         
-        If plot is True, requires textwrap and pydot. This can be done with:        
-        pip install textwrap
-        pip install pydot
-        sudo apt-get install graphviz
-        
         Parameters
         ----------
-        plot: bool
+        plot
             Whether to display as a plot (True) or as text (False) 
-        return_graph: bool
+        return_graph
             Whether to return the graph object (when plot = True)
-        supress_labels: bool
-            Whether to not include ground truth information for subsets of the hierarchy
-        node_width: int
+        supress_labels
+            Whether to not display the high confidence thresholding rules used to identify subsets
+        node_width
             Width of the nodes within the hierarchy display
-        node_height: int
+        node_height
             Height of the nodes within the hierarchy display
-        font_mult: float
+        font_mult
             Font size is 16 times this font multiplier
         
         Returns
@@ -874,25 +971,26 @@ class Hierarchy:
             return graph
         return
             
-    def to_graphviz(self,supress_labels: bool=False,
+    def to_graphviz(self, supress_labels: bool=False,
                     node_width: int=4, node_height: int=1,
                     font_mult: float=1) -> str:
-        """Exports the tree in the dot format of the graphviz software, useful for plotting.
+        """
+        Exports the tree in the dot format of the graphviz software, useful for plotting.
         
         Parameters
         ----------
-        supress_labels: bool
-            Whether to not include ground truth information for subsets of the hierarchy
-        node_width: int
+        supress_labels
+            Whether to not include high confidence information for subsets of the hierarchy
+        node_width
             Width of the nodes within the hierarchy display
-        node_height: int
+        node_height
             Height of the nodes within the hierarchy display
-        font_mult: float
+        font_mult
             Font size is 16 times this font multiplier
             
         Returns
         -------
-        string_graphviz: str
+        string_graphviz
             Hierarchy in graphviz format for plotting 
         """
         import textwrap
@@ -953,13 +1051,13 @@ class Hierarchy:
 
 class Subset:
     '''
-    Basic building block of the hierarchy. Describes a population of cells. 
+    A basic building block of a Hierarchy, describing a population of cells. These can be added to a Hierarchy using the `.add_subset()` method
     
     Parameters
     ----------
-    values: list of str or list of lists of str
+    values
         list or list of lists of the length of the markers of the Classification or Cutoff above
-    color: str
+    color
         Hex code (including the #) that defines the color of the subsets to be used for making color dictonaries later
     '''
     def __init__(self,values: Union[List[str], List[List[str]]],color: str='#FFFFFF'):
@@ -969,40 +1067,44 @@ class Subset:
 
 class Classification:
     '''
-    Class used to build the hierarchy. 
+    A basic building block of a Hierarchy, describing subsetting rules. These can be added to a Hierarchy using the `.add_classification()` method
     
     Parameters
     ---------
-    markers: list of str
-        Ground truth markers, list of features used to define ground truth subsets
-    min_events: optional, int [0,inf] or float [0,1]
+    marker
+        list of features used to define high confidence subsets
+    min_events
+        int [0,inf] or float [0,1]
         The  minimum number (or fraction of total) of events for a subset to be included in classification, 
         otherwise a subset will be skipped.
-    class_weight: Optional, a valid class_weight in sklearn.ensemble.RandomForestClassifier (dict or list of dicts)
+    class_weight
+        A valid class_weight in sklearn.ensemble.RandomForestClassifier (dict or list of dicts)
         Weights associated with classes {class_label: weight}, see sklearn.ensemble.RandomForestClassifier for more details
-    in_danger_noise_checker: Optional, bool
-        Whether to check for (and amplify or remove, respectively) in danger and noise events. In danger events are ground truth events at classification 
-        boundaries. Events labelled noise are ground truth events that do not share any nearest neighbors with similar calls, and are thus likely mislabelled.
-    classifier: optional, A stored sklearn classifier 
+    in_danger_noise_checker
+        Whether to check for (and amplify or remove, respectively) in danger and noise events. In danger events are high confidence events at 
+        classification boundaries. Events labeled noise are high confidence events that do not share any nearest neighbors with similar calls, 
+        and are thus likely mislabeled.
+    classifier
         The classifier to be used for classification. If defined, must also define feature_names.
-    features_limit: optional, listlike of str or dictonary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
+    features_limit
+        listlike of str or dictonary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
         Specifies the default features allowed for training the classifier.
-    feature_names: optional, list of str 
+    feature_names
         Names of features used to train this classifier. Not set if classifier is None.
-    is_cutoff: optional, bool
+    is_cutoff
         Whether newly created classification nodes will be treated as cutoffs.
-    max_training: optional, int
+    max_training
         Specifies the default maximum amount of events used for training. This greatly affects the speed of training.
-    force_spike_ins: list of str
+    force_spike_ins
         The list of subsets to force oversampling/spike ins to, even if the subset has enough events.
-    calibrate: optional, bool
-        Default for whether to perform calibration on the prediction confidence of the random forest classifier. Uncalibrated values reflect the % of trees in
-        agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level. 
-    clf_kwargs: dict
+    calibrate
+        Default for whether to perform calibration on the prediction confidence of the random forest classifier. Uncalibrated values reflect the 
+        % of trees in agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level. 
+    clf_kwargs
         Keyword arguments to send to sklearn.ensemble.RandomForestClassifier
     '''
 
-    def __init__(self,markers: List[str],
+    def __init__(self, markers: List[str],
                  min_events: Optional[Union[int, float]]=None, 
                  class_weight: Optional[Union[dict, List[dict]]]=None,
                  in_danger_noise_checker: Optional[bool]=None, classifier=None,
@@ -1033,35 +1135,40 @@ class Classification:
             self.calibrate = calibrate
         return
 
-def gt_defs(marker_list: List[str], pos: Union[List[str],str]=[],
+def hc_defs(marker_list: List[str], pos: Union[List[str],str]=[],
             neg: Union[List[str],str]=[], other: Union[List[str],str]=[],
             POS: str='pos', NEG: str='neg', 
             OTHER: str=None, UNDEFINED: str='any',
             any_of: Union[List[str],List[List[str]]]=[], any_ofs_connector: str='&',
             n: Union[List[int],int]=1, ANY_OPTIONS: Union[List[List[str]], List[str]]=['pos','any']):
     '''
-    Helper function for defining simple or complex gating strategies for ground truth. 
+    Helper function for defining simple or complex gating strategies for high confidence thresholding. 
     
     Parameters 
     ----------
-    marker_list: List of str
-        All the markers in the group, usually set by the classification/cutoff defintion above.
-    pos, neg, or other: Lists of str 
+    marker_list
+        All the markers in the group, usually set by the classification/cutoff defintion above. Markers can also have "_lo" or "_hi" appeneded
+        to them to specify multiple thresholds on the same marker at the same level.
+    pos
+    neg
+    other
         Lists of markers that must be positive, negative, or other
-    POS, NEG, or OTHER: str
+    POS
+    NEG
+    OTHER
         Strings that contain the value to write for those groups, OTHER may also be passed as a list of strings the same length as other. 
-    UNDEFINED: str
+    UNDEFINED
         String that contains the value to write for any undefined groups
-    any_of: List of str or list of list of str
+    any_of
         Used to define more complex gating. Can be represented as a list of markers (a single grouping) or a list of these lists (multiple pairings)
-    any_ofs_connector: str
-        In the case of any_of being a list of lists, whether to join them with an "&" for 'and' or a '|' for 'or' to create complex gating like —
+    any_ofs_connector
+        In the case of any_of being a list of lists, whether to join them with an "&" for 'and' or a '|' for 'or' to create complex gating, 
             "&" for "at least one of [CCR7,SELL] and at least one of [TCF7, MAL]" 
             '|' for "any one of [CD19, CD20] OR any 2 of [JCHAIN, CD138, CD34]"
-    n: int or list of int
+    n
         When using "any_of", how many in the group must match the threshold (e.g. n=2 is "any 2 positive"), when any_of is a list of lists, 
         this can become a list of ints the same length
-    ANY_OPTIONS: list of two str the value and alternative. or list of list of two str
+    ANY_OPTIONS
         The value string is put in place of where the any condition is satisfied
         The alternative string is the filler when those markers are not part of the condition. 
         e.g. for "any two positive" you would use ['pos','any'] for "only two positive" you would use ['pos','neg']
@@ -1114,7 +1221,7 @@ def gt_defs(marker_list: List[str], pos: Union[List[str],str]=[],
             markers.append(marker)
         for options in itertools.combinations(any_of,n):
             not_chosen = [mark for mark in any_of if not mark in options]
-            options_list.append(gt_defs(any_of,pos=options, neg=not_chosen, POS=ANY_OPTIONS[0], NEG=ANY_OPTIONS[1])[0])
+            options_list.append(hc_defs(any_of,pos=options, neg=not_chosen, POS=ANY_OPTIONS[0], NEG=ANY_OPTIONS[1])[0])
         options_list_list.append(options_list)
     
     if any_ofs_connector == '|':
@@ -1129,7 +1236,7 @@ def gt_defs(marker_list: List[str], pos: Union[List[str],str]=[],
     while len(options_list_list) > 0:
         if options_list_list[0] == []:
             options_list_list[0] = [[]]
-        completed_options_list = utils.list_tools(completed_options_list, '*', options_list_list.pop(0))
+        completed_options_list = utils._list_tools(completed_options_list, '*', options_list_list.pop(0))
     arg_sorted = [i[0] for i in sorted(enumerate(markers), key=lambda x:marker_list.index(x[1]))]
     
     sorted_options_list = [list(np.array(option)[arg_sorted]) for option in completed_options_list] 

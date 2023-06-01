@@ -7,16 +7,17 @@ import pandas as pd
 import numpy as np
 
 def test_list_tools():
-    assert utils.list_tools([1,2,3],'+',[4,5,6]) == [1,2,3,4,5,6]
-    assert utils.list_tools(['1','2','3'],'==1') == [True,False,False]
-    assert utils.list_tools([1,2,3],'-',[4,5,6,1]) == [2,3]
-    assert utils.list_tools([1,2,3],')',[4,5,6,1]) is None
+    assert utils._list_tools([1,2,3],'+',[4,5,6]) == [1,2,3,4,5,6]
+    assert utils._list_tools(['1','2','3'],'==1') == [True,False,False]
+    assert utils._list_tools([1,2,3],'-',[4,5,6,1]) == [2,3]
+    assert utils._list_tools([1,2,3],')',[4,5,6,1]) is None
+
 def test_logs():
     logg.info('info')
     logg.debug('debug')
     logg.warn('warn')
     logg.error('error')
-    logger.initiate_log()
+    logger._initiate_log()
     logger.log_to_file('docs/data/test_log')
     logg.info('info')
     logg.debug('debug')
@@ -24,7 +25,7 @@ def test_logs():
     logg.error('error')
     return
 
-def test__marker():
+def test_marker():
     res = utils._marker('cat',['dog','caat','CAT','caTT'],allow_multiple=True)
     assert res == ['CAT','caTT']
     res = utils._marker('cat',['dog','caat','CAT','caTT'],allow_multiple=False)

@@ -22,48 +22,49 @@ from . import thresholding
 DEBUG_ERRORS = False
 
 def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,pd.core.series.Series],
-                     data_key: str=None, reduce_features_min_cells: int=0, 
+                     data_key: Optional[str]=utils.DATA_KEY, reduce_features_min_cells: int=0, 
                      features_limit=None) -> Tuple[sp.csr_matrix, list]:
-    '''
-    Setup before training a classifier. This can be run before the classifier (to reduce runtime of the classifier function in a parameter optimization loop),
-    or is automatically run when training a classifier. It concatenates the .X and any data_key in the .obsm, then performs feature reduction (if 
-    reduce_features_min_cells > 0). Next, features can be limited by an external feature set. Then, it sorts the resulting feature_names (the columns from the 
-    .X and .obsm[data_key]) and csr.matrix, alphabetically, to make the feature order reproducible across runs. If defined, feature limits can be performed so
-    that you can match the expected features of the hierarchy.
+    """
+    Setup that can optionally be completed before running mmc.classify. This can be run before the classifier (to reduce runtime of the classifier function in a parameter optimization loop), or is automatically run when training a classifier. It concatenates the .X and any data_key in the .obsm, then performs feature reduction (if reduce_features_min_cells > 0). Next, features can be limited by an external feature set. Then, it sorts the resulting feature_names (the columns from the .X and .obsm[data_key]) and csr.matrix, alphabetically, to make the feature order reproducible across runs. If defined, feature limits can be performed so that you can match the expected features of the hierarchy.
 
     Parameters
     ----------
-    adata: anndata object
-        Object containing gene expression data, and expression data for modalities for every data key in .obsm
-    x_modalities: str, column in adata.var
+    adata
+        Object containing gene expression data, and expression data for modalities for every data key in `.obsm`
+    x_modalities
         Name of the modality of the data in the .X of adata
-    data_key: str
+    data_key
         Key in adata.obsm to concatinate into .X and to reduce features across
-    reduce_features_min_cells: int
+    reduce_features_min_cells
         Remove features that vary in fewer than this number of cells passed to _reduce_features
-    features_limit: listlike of str or dictonary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
+    features_limit
+        listlike of str or dictonary in the format `{'modality_1':['gene_1', 'gene_2', ...], 'modality_2':'All'}`
         Specifies the allowed features to classify on for a given modality
     
     Returns
     -------
-    (X, features_used)
-        X: scipy.sparse.csr_matrix of numpy float64
-            Reduced adata data
-        features_used: list
-            List of features that were checked/used in the reduction process 
-    '''
+    scipy.sparse.csr_matrix
+        Reduced adata data
+    list
+        List of features that were checked/used in the reduction process 
+    """
     logg.print('Setting up...')
     if type(x_modalities) is str and x_modalities in adata.var.columns:
         x_modalities = adata.var[x_modalities]
-        
+    
     if data_key is None:
         logg.print('Using .X only')
+        
         X = sp.csr_matrix(adata.X)
+        utils._validate_names(adata.var_names) 
         features_used = list(adata.var_names+"_mod_"+x_modalities)
     else:
         logg.print('Using .X and '+str(data_key))
         X = sp.hstack([adata.X,adata.obsm[data_key]],format='csr')
+        utils._validate_names(adata.var_names) 
+        utils._validate_names(adata.obsm[data_key].columns) 
         features_used = list(adata.var_names+"_mod_"+x_modalities) + list(adata.obsm[data_key].columns+"_mod_"+data_key)
+    
     
     assert len(features_used) == len(set(features_used)), 'All feature names must be unique...'
     
@@ -73,24 +74,24 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,pd.core.ser
         features_limit = _limit_features_list_to_dict(features_limit)
         if not data_key is None:
             features_limit[data_key] = 'All'
+            
     X, features_used = _reduce_features(X,features_used, min_cells=reduce_features_min_cells)
     X, features_used = _limit_and_realign_features(X, features_used, features_limit)
     return X,list(features_used)
 
 def _limit_features_list_to_dict(features_limit: List[str]) -> dict:
-    '''
+    """
     Creates dictionary of feature names to modalities, splits rows of np.array with first column as key and last column as value.
     
     Parameters
     ----------
-    features_limit: listlike
+    features_limit
         array with feature names in first column and modalities in last column
     
     Returns
     -------
-    f_limit: dictionary
-        dictionary with feature names as keys and modalities as values
-    '''
+    A dictionary with feature names as keys and modalities as values
+    """
     features_limit = np.array(features_limit)
     features_limit_mods = np.array([i.split('_mod_')[-1] for i in features_limit])
     features_limit_names = np.array([i.split('_mod_')[0] for i in features_limit])
@@ -99,29 +100,29 @@ def _limit_features_list_to_dict(features_limit: List[str]) -> dict:
         f_limit[i] = features_limit_names[features_limit_mods==i]
     return f_limit
 
-def _limit_and_realign_features(X: sp.csr_matrix,feature_names: List[str],
+def _limit_and_realign_features(X: sp.csr_matrix, feature_names: List[str],
                                 features_limit: Union[List[str], dict],
-                                assert_all_included: bool = False) -> Tuple[sp.csr_matrix, list]:
-    '''
+                                assert_all_included: bool=False) -> Tuple[sp.csr_matrix, list]:
+    """
     Removes any features from X that are not in features_limit and realigns new matrix of features and features list to reflect removed features
     
     Parameters
     ----------
-    X: scipy.sparse.csr_matrix
+    X
         sparse matrix containing feature information
-    feature_names: list of features
+    feature_names
         names of features in X
-    features_limit: list or dictionary of features
+    features_limit
         features to keep in X
-    assert_all_included: bool
+    assert_all_included
         If true, throw error if not all features in features limit also exist in features names
     Returns
     -------
-    check_array: csr sparse matrix
+    check_array: csr.spare_matrix
         Validated, limited, and realigned array
     features_used: list
         The sorted features in check_array
-    '''
+    """
     if (features_limit is None) or (len(feature_names) == len(features_limit)) & (list(feature_names) == list(features_limit)):
         features_used = feature_names
     else:
@@ -159,18 +160,18 @@ def _limit_and_realign_features(X: sp.csr_matrix,feature_names: List[str],
         f'Not all features in feature_limit availible in feature_names {set(features_limit) - set(features_used)}'
     return sklearn.utils.check_array(X,accept_sparse=True), list(features_used)    
 
-def _reduce_features(X: sp.csr_matrix,feature_names: List[str],
-                     min_cells:int=50) -> Tuple[sp.csr_matrix, List[str]]:
-    '''
+def _reduce_features(X: sp.csr_matrix, feature_names: List[str],
+                     min_cells: int=50) -> Tuple[sp.csr_matrix, List[str]]:
+    """
     Reduce features that are only expressed in fewer than min_cells_threshold cells.
     
     Parameters
     ----------
-    X: 2D scipy.sparse.csr_matrix
+    X
         Contains feature information
-    feature_names: listlike 
+    feature_names
         Contains feature names
-    min_cells: int 
+    min_cells
         Minimum cells threshold. Any feature expressed in fewer cells will be excluded.
         
     Returns
@@ -179,7 +180,7 @@ def _reduce_features(X: sp.csr_matrix,feature_names: List[str],
         Contains feature information for features expressed in at least min_cells
     feature_names: listlike 
         Contains feature names for features expressed in at least min_cells
-    '''
+    """
     if min_cells > 0:
         num_cells = X.getnnz(axis=0)
         logg.info(f"Removing {sum(num_cells<min_cells)} features lacking expression in a minimum of {min_cells} events...")
@@ -189,12 +190,12 @@ def _reduce_features(X: sp.csr_matrix,feature_names: List[str],
         logg.info("No min_cells feature reduction...")
     return X, feature_names
 
-def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy, 
-             key_added: str='lin', data_key: Optional[str]='protein',
+def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy, 
+             key_added: str='lin', data_key: Optional[str]=utils.DATA_KEY,
              x_data_key: Optional[str]=None, x_modalities: str='GEX',
-             batch_key: Optional[str]=None, retrain: bool=False,
+             batch_key: Optional[str]=utils.BATCH_KEY, retrain: bool=False,
              plot_thresholds: bool=False, reduce_features_min_cells: int=25,
-             allow_spike_ins: bool=True, enforce_hold_out: bool=True, 
+             allow_spike_ins: bool=True, enforce_holdout: bool=True, 
              proba_suffix: Optional[str]='_proba', 
              resample_method: Optional[str]='oversample', weight_integration: bool=False,
              X: Optional[sp.csr_matrix]=None, features_used: Optional[List[str]]=None,
@@ -202,73 +203,75 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
              features_limit: Optional[Union[str, List[str], dict]]=None, 
              skip_to: Optional[str]=None, end_at: Optional[str]=None,
              reference: Optional[str]=None) -> Tuple[anndata.AnnData, hierarchy.Hierarchy]:
-    '''
-    Build a classification from a hierarchy. If the hierarchy has not been trained yet, this function trains the hierarchy AND predicts the dataset. If the 
-    hierarchy has been trained, this classifier will skip retraining unless explicitly asked for (retrain=True)
+    """
+    Classify subsets using the provided hierarchy. If the hierarchy has not yet been trained, this function trains the hierarchy and predicts cell types. If the hierarchy has been trained, this classifier will not retrain random forests unless explicitly asked to (retrain=True).
     
-    NOTE: Many classifier kwargs (for the RandomForest) are defined in the hierarchy on a node-by-node basis. Please see mmc.Hierarchy() and 
-          mmc.add_classification() for details. 
-          Recommended to follow the use of this function with mmc.terminal_names().
+    NOTE: Many classifier kwargs are defined in the hierarchy on a node-by-node basis. Please see mmc.Hierarchy() and mmc.add_classification() for details. 
     
-    adata: anndata object
-        Object containing gene expression data, and expression data for modalities for every data key in .obsm
-    hierarchy: Hierarchy object
+    We recommend following this function with mmc.terminal_names() to put classifications into a `.obs` column
+    
+    Parameters
+    ----------
+    adata
+        Object containing expression of one modality in the .X and optionally expression data for another modality in the .obsm[data_key]
+    hierarchy
         Hierarchy design specifying one or more classification levels and subsets.
-    key_added: str
+    key_added
         Key in adata.obsm to store the resulting dataframe of the classifier's results
-    data_key: optional, str
-        Key in adata.obsm to be used for ground truth thresholding.
-    x_data_key: optional, str
+    data_key
+        Key in adata.obsm to be used for high confidence thresholding.
+    x_data_key
         Key in adata.obsm used for predictions, if undefined, defaults to data_key
-    x_modalities: str
+    x_modalities
         Column in adata.var (if x_modalities is in adata.var.columns), or name of the modality of the data in the .X
-    batch_key: optional, str
+    batch_key
         Name of a column in adata.obs that corresponds to a batch for use in the classifier   
-    retrain: bool
+    retrain
         If the classification level of a hierarchy is already defined, whether to replace that classifier with a retrained one.
         If False, no new classifier would be trained, and that classifier is used for prediction of the data.
         Overrides reduce_features_min_cells to 0 (as this early stage feature reduction often breaks re-running models).
-    plot_thresholds: bool
-        Whether to display thresholds when calculating ground truth
-    reduce_features_min_cells: int
+    plot_thresholds
+        Whether to display histograms of expression distribtuion while performing high confidence thresholding
+    reduce_features_min_cells
         Remove features that are expressed in fewer than this number, passed to _reduce_features. 
         Feature reduction can be a very powerful tool for improving classifier performance. 
         Only used if X and features_used are not provided, and retrain is True.
-    allow_spike_ins: bool
+    allow_spike_ins
         Whether to allow spike ins when doing batched data. Spike ins are performed if a subset is below the minimum threshold within an individual batch, 
         but not the overall dataset. If False, errors may occur if there are no cells of a particular subset within a batch. Warning, spike ins currently 
         do not respect held out data, meaning there will be much fewer than 20% held out data if spike ins are frequent.
-    enforce_hold_out: bool
+    enforce_holdout
         Wehther to enforce a hold out of an additional 20% at each classification level, to prevent spike-ins from using that data.        
-    proba_suffix: optional, str
+    proba_suffix
         If defined, probability outputs of predict_proba will be saved to the .uns[level+proba_suffix]
-    resample_method: optional, str 
-        Method to resample ground truth data prior to training, passed to _balance_training_classes
-    weight_integration: bool
+    resample_method
+        Method to resample high confidence data prior to training, passed to _balance_training_classes
+    weight_integration
         Whether to have each batch represented equally in the forest, or weight the number of trees from each batch to their representation in the total dataset 
     X, features_used: scipy.sparse.csr_matrix and listlike of str
         Optional setup data to circumvent the initial classifier setup functions. The presence of both of these overrides any predefined feature reduction 
         techniques.   
-    probability_cutoff: float [0,1]
-        The minimum fraction of trees that must agree on a call for that event to be labelled by the classififer. 
-    features_limit: str, listlike of str, dict
+    probability_cutoff
+        Between 0 and 1, the minimum fraction of trees that must agree on a call for that event to be labeled by the classififer. This is experimental.
+    features_limit
         A list of str specifying features to limit to, in the format [feature_name]_mod_[modality], e.g. 
-    skip_to, end_at: str
+    skip_to
+    end_at
         Names of hierarchy classification levels to start at or prematurely end at. This is extremely useful when debugging particular levels of the classifier.
-        The order of levels corresponds to the order they are defined in the hierarchy. Requires that the anndata object has a predefined .obsm[key_added]. If
+        The order of levels corresponds to the order they are defined in the hierarchy. Requires that the AnnData object has a predefined .obsm[key_added]. If
         skip_to is defined, it replaces only the columns that occur at and beyond that level.
-    reference: str
-        Column in the adata.obs to be used for logged debug info to reveal how the ground truth function performs    
+    reference
+        Column in the adata.obs to be used for comparing (in the log file) the results of high confidence thresholding to predetermined annotations or clusters
         
-    returns
+    Returns
     -------
-    adata: anndata object
-        Object containing a .obsm[key_added] containing columns corresponding to the classification ground truth ("_gt"), the training data ("_train"), the 
+    adata: AnnData object
+        Object containing a .obsm[key_added] containing columns corresponding to the classification high confidence ("_hc"), the held out data not used for testing ("_held_out"), the 
         prediction ("_class") for each level. If proba_suffix is defined, also contains "_proba" keys in the .uns corresponding to the prediction probabilities
         of each class for each event.
     Hierarchy: Hierarchy object
         A trained hierarchy with classifiers built into it and a record of thresholds and other settings used. 
-    '''
+    """
     if x_data_key is None:
         x_data_key = data_key
     setup_complete = (not X is None) and (not features_used is None)
@@ -289,8 +292,8 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
         assert gparent+"_class" in adata.obsm[key_added].columns, 'Attempting to skip to a level beneath an unclassified level'
         logg.warning(f'Skipped to classification on {skip_to}')
         for classification in classifications:
-            adata.obsm[key_added].drop([classification+"_class",classification+"_gt",classification+"_train",
-                                        classification+"_proba",classification+"_trains",classification+"_tcounts"],
+            adata.obsm[key_added].drop([classification+"_class",classification+"_hc",classification+"_held_out",
+                                        classification+"_proba",classification+"_train",classification+"_tcounts"],
                                         axis=1, inplace=True, errors='ignore')
     if not end_at is None:
         classifications = classifications[:classifications.index(end_at)+1]
@@ -317,30 +320,31 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
             logg.print("Data subsetted on "+ parent+' in '+ gparent) 
             
             if retrain or not hierarchy.has_clf(level):
-                logg.print(f'Running ground truths for {level}...')         
-                gt_dfs, gt_batches = [], []
+                logg.print(f'Running high confidence populations for {level}...')         
+                hc_dfs, hc_batches = [], []
                 for batch_mask, batch in zip(batch_masks, batches):
                     adata = subset_adata[batch_mask[subset_mask]]
                     if not batch_key is None:
-                        logg.info(f'Running ground truths in {batch}')
+                        logg.info(f'Running high confidence thresholds in {batch}')
                     if len(adata) > 0:
-                        df = ground_truth(adata,hierarchy,level,data_key,reference=reference,
+                        df = hc_threshold(adata,hierarchy,level,data_key,reference=reference,
                                           batch=batch,plot=plot_thresholds)
-                        gt_dfs.append(df)
-                        gt_batches.append(batch)
+                        hc_dfs.append(df)
+                        hc_batches.append(batch)
+                        logg.debug(f"High confidence thresholding on {len(df)} events")
                     else:
-                        logg.info(f'No events in subsetted adata, skipping ground truth')
+                        logg.info(f'No events in subsetted adata, skipping high confidence thresholding')
                     del adata
                     gc.collect()
 
                 if hierarchy.get_info(level,'is_cutoff'):
                     logg.print(f'Performing cutoff for {level}...')
-                    df = pd.concat(gt_dfs)
-                    df[level+'_class'] = df[level+'_gt']
+                    df = pd.concat(hc_dfs)
+                    df[level+'_class'] = df[level+'_hc']
                     df.loc[df[level+'_class'] == '?',level+'_class'] = np.nan
                 else:
                     logg.print(f'Preparing training data for {level}...')
-                    gt_df = pd.concat(gt_dfs)
+                    hc_df = pd.concat(hc_dfs)
                     min_events = hierarchy.get_info(level,'min_events')
                     
                     if min_events != 0:
@@ -349,7 +353,7 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
                             min_events = np.ceil(min_events * len(subset_adata))
                             
                         subsets = hierarchy.subsets_info(level).keys()
-                        vals = gt_df[level+'_gt'].value_counts()
+                        vals = hc_df[level+'_hc'].value_counts()
                         vals.drop('?',errors='ignore',inplace=True)
                         logg.debug(f'Values before min_events ({min_events}) thresholding\n{vals.to_string()}')
                         logg.debug(f'len(vals) = {len(vals)}, len(subsets) = {len(subsets)}')
@@ -357,54 +361,57 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
                             logg.debug(f'Must remove at least one subset')
                             removed_subsets = list(set(subsets)-set(vals.index[vals>=min_events]))
                             logg.warning(f'Removing {removed_subsets} cells as they are below {min_events} events')
-                            gt_df.loc[gt_df[level+'_gt'].isin(removed_subsets),level+'_gt'] = '?'
+                            hc_df.loc[hc_df[level+'_hc'].isin(removed_subsets),level+'_hc'] = '?'
                             subsets = list(set(subsets)-set(removed_subsets))
-                        assert len(gt_df[gt_df[level+'_gt']!=0][level+'_gt'].unique()) > 1, 'Cannot train classifier with only one class'
+                        assert len(hc_df[hc_df[level+'_hc']!=0][level+'_hc'].unique()) > 1, 'Cannot train classifier with only one class'
                         
                         force_spike_ins = hierarchy.get_info(level,'force_spike_ins')
-                        if enforce_hold_out:# or hierarchy.get_info(level,'calibrate'):
-                            original_gt_df = gt_df.copy()
-                            gt_dfs_holdout = []
+                        if enforce_holdout:# or hierarchy.get_info(level,'calibrate'):
+                            original_hc_df = hc_df.copy()
+                            logg.debug(f" original_hc_df {original_hc_df}")
+                            hc_dfs_holdout = []
                             for subset in subsets:
-                                gt_dfs_holdout.append(gt_df[gt_df[level+"_gt"]==subset].sample(frac=.9))
-                            gt_df = pd.concat(gt_dfs_holdout)
+                                hc_dfs_holdout.append(hc_df[hc_df[level+"_hc"]==subset].sample(frac=.9))
+                            hc_df = pd.concat(hc_dfs_holdout)
                         if not batch_key is None:
-                            gt_barcodes_batches = []
-                            for df, batch in zip(gt_dfs, gt_batches):
-                                gt_barcodes_batch = list(df.index)
+                            hc_barcodes_batches = []
+                            for df, batch in zip(hc_dfs, hc_batches):
+                                hc_barcodes_batch = list(df.index)
                                 for subset in subsets:
-                                    vals = df[level+'_gt'].value_counts()
+                                    vals = df[level+'_hc'].value_counts()
                                     if not subset in vals.index or (vals.loc[subset] < min_events):
                                         if not subset in vals.index:
-                                            events_needed = min(min_events, sum((gt_df[level+'_gt']==subset) & ~gt_df.index.isin(gt_barcodes_batch))-1) 
+                                            events_needed = min(min_events, sum((hc_df[level+'_hc']==subset) & ~hc_df.index.isin(hc_barcodes_batch))-1) 
                                         else:
-                                            events_needed = min(min_events - vals.loc[subset],sum((gt_df[level+'_gt']==subset) & \
-                                                                                                  ~gt_df.index.isin(gt_barcodes_batch))-1) 
+                                            events_needed = min(min_events - vals.loc[subset],sum((hc_df[level+'_hc']==subset) & \
+                                                                                                  ~hc_df.index.isin(hc_barcodes_batch))-1) 
                                             events_needed = max(events_needed,0)
                                         if allow_spike_ins:
                                             logg.info(f'Spiking in {events_needed} of {subset} in {batch} to reach {min_events} events')
-                                            gt_barcodes_batch += random.sample(list(gt_df[(gt_df[level+'_gt']==subset) & \
-                                                                                          ~gt_df.index.isin(gt_barcodes_batch)].index), events_needed)
+                                            hc_barcodes_batch += random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
+                                                                                          ~hc_df.index.isin(hc_barcodes_batch)].index), events_needed)
                                         else:
                                             assert False, f"{batch_key} of {batch} is missing subset {subset}. Cannot train without spike ins."
                                     if subset in force_spike_ins:
-                                        events_needed = min(vals.loc[subset]*len(batches),sum((gt_df[level+'_gt']==subset) & \
-                                                                                              ~gt_df.index.isin(gt_barcodes_batch))-1)
+                                        events_needed = min(vals.loc[subset]*len(batches),sum((hc_df[level+'_hc']==subset) & \
+                                                                                              ~hc_df.index.isin(hc_barcodes_batch))-1)
                                         events_needed = max(events_needed,0)
                                         logg.info(f'Spiking in {events_needed} of {subset} in {batch} as required by force_spike_ins)')
-                                        gt_barcodes_batch += random.sample(list(gt_df[(gt_df[level+'_gt']==subset) & \
-                                                                                      ~gt_df.index.isin(gt_barcodes_batch)].index), events_needed)
-                                gt_barcodes_batches.append(gt_barcodes_batch)
+                                        hc_barcodes_batch += random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
+                                                                                      ~hc_df.index.isin(hc_barcodes_batch)].index), events_needed)
+                                hc_barcodes_batches.append(hc_barcodes_batch)
                         else:
-                            gt_barcodes_batches = [list(gt_df.index)]
-                    if enforce_hold_out:# or hierarchy.get_info(level,'calibrate'):
-                        gt_df = original_gt_df
+                            hc_barcodes_batches = [list(hc_df[hc_df[level+'_hc']!='?'].index)]
+                    if enforce_holdout: # or hierarchy.get_info(level,'calibrate'):
+                        hc_df = original_hc_df
+                        
                     in_danger_noise_checker, max_training, clf_kwargs, class_weight, f_limit = \
                     hierarchy.get_info(level,['in_danger_noise_checker', 
                                               'max_training','clf_kwargs','class_weight', 'features_limit'])
                     logg.info(clf_kwargs)
                     if class_weight == 'balanced' and not batch_key is None:
-                        y_org = gt_df.loc[gt_df[level+'_gt']!='?',level+'_gt'].values
+                        y_org = hc_df.loc[hc_df[level+'_hc']!='?',level+'_hc'].values
+                        # y_org = hc_df.loc[[True] * len(hc_df),level+'_hc'].values
                         classes = np.unique(y_org)
                         class_weight = sklearn.utils.class_weight.compute_class_weight('balanced', classes=np.unique(y_org), y=y_org)
                         class_weight = dict(zip(classes,class_weight))
@@ -424,53 +431,58 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
                     clf.n_estimators = 0
                     dfs = []
                     train_dfs = []
-                    for gt_barcodes_batch, batch, weight in zip(gt_barcodes_batches, gt_batches,weights):
+                    
+                    for hc_barcodes_batch, batch, weight in zip(hc_barcodes_batches, hc_batches,weights):
                         clf.n_estimators += int(np.ceil(n_estimators * weight))
                         logg.info(f'Training {int(np.ceil(n_estimators * weight))} new estimators using {batch}...')
-                        df = gt_df.loc[gt_barcodes_batch].copy()
+                        df = hc_df.loc[hc_barcodes_batch].copy()
                         mapper = dict(zip(subset_adata.obs_names,range(0,len(subset_adata.obs_names))))
-                        gt_barcodes_batch = [mapper[i] for i in gt_barcodes_batch]
-                        X,y = _get_train_data(subset_X[gt_barcodes_batch],df,level,resample_method,max_training,in_danger_noise_checker, features_used)
-                        train_df = _map_training(subset_X[gt_barcodes_batch], X, df.index)
+                        hc_barcodes_batch = [mapper[i] for i in hc_barcodes_batch]
+                        X,y = _get_train_data(subset_X[hc_barcodes_batch],df,level,resample_method,max_training,in_danger_noise_checker, features_used)
+                        train_df = _map_training(subset_X[hc_barcodes_batch], X, df.index)
                         train_dfs.append(train_df)
                         clf.fit(X, y)
                         dfs.append(df)
                         
                         del X, y
                     hierarchy.set_clf(level,clf,features_used)
-                    
                     df = pd.concat(dfs)
+                    lost_items = hc_df[~hc_df.index.isin(df.index)].copy()
+                    lost_items[level+'_holdout'] = True
+                    df = pd.concat([df,lost_items])
                     df.reset_index(inplace=True)
-                    df = df.groupby(['index',level+'_gt']).sum()
+
+                    df = df.groupby(['index',level+'_hc']).sum()
                     df.reset_index(level=1,inplace=True)
+                    train_dfs.append(pd.DataFrame(0,index=lost_items.index,columns=[level+'_training']))
                     train_df = pd.concat(train_dfs)
+                    
                     train_df.reset_index(inplace=True)
                     train_df = train_df.groupby(['index']).sum()
-                    train_df[level+'_tcounts'] = train_df['training'].astype(int) 
-                    train_df[level+'_train'] = train_df['training'].astype(bool)
-                    del train_df['training']
-                    df[level+'_trains'] = df[level+'_train']
-                    del df[level+'_train']
+                    df[level+'_tcounts'] = train_df['training'].astype(int)
+                    df[level+'_train'] = train_df['training'].astype(bool)
+                    del train_df                
+                    df[level+'_holdout'] = (df[level+'_holdout']) #& (df[level+'_hc'] != '?')
+                    
+
                 logg.print(f"Merging data into adata.obsm['{key_added}']")
                 total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
                                           right_index=True,suffixes=['_error',None]) 
                 if not hierarchy.get_info(level,'is_cutoff'):
-                    total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(train_df,how='left',left_index=True,
-                                              right_index=True,suffixes=['_error',None])
                     if hierarchy.get_info(level,'calibrate'):
-                        logg.print(f'Runing calibration on random forest')
+                        logg.print(f'Running calibration on random forest')
                         
-                        train_mask = total_adata[subset_mask].obsm[key_added][level+'_trains'].astype(bool).values
-                        gt_mask = (total_adata[subset_mask].obsm[key_added][level+'_gt'] != '?').values
-                        third_mask = np.random.choice([True,False,False],len(gt_mask))
-                        calibration_mask = ~train_mask & gt_mask & third_mask
+                        train_mask = total_adata[subset_mask].obsm[key_added][level+'_train'].astype(bool).values
+                        hc_mask = (total_adata[subset_mask].obsm[key_added][level+'_hc'] != '?').values
+                        third_mask = np.random.choice([True,False,False],len(hc_mask))
+                        calibration_mask = ~train_mask & hc_mask & third_mask
                         # calibration_mask = train_mask
                         # if calibration_mask doesn't include all
-                        y_calibration = total_adata[subset_mask].obsm[key_added][level+'_gt'][calibration_mask]
+                        y_calibration = total_adata[subset_mask].obsm[key_added][level+'_hc'][calibration_mask]
                         if ((sum(calibration_mask) < 1000) or 
-                           (not set(y_calibration.values) == (set(total_adata[subset_mask].obsm[key_added][level+'_gt'].values) - {'?'}))):
-                            calibration_mask = ~train_mask & gt_mask
-                            y_calibration = total_adata[subset_mask].obsm[key_added][level+'_gt'][calibration_mask]
+                           (not set(y_calibration.values) == (set(total_adata[subset_mask].obsm[key_added][level+'_hc'].values) - {'?'}))):
+                            calibration_mask = ~train_mask & hc_mask
+                            y_calibration = total_adata[subset_mask].obsm[key_added][level+'_hc'][calibration_mask]
                             logg.info(f'Calibration will not include the 1/3rd mask')
                         y_calibration = y_calibration.values
                         # if len(y_calibration)>1000:
@@ -493,7 +505,7 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
                 clf,f_names = hierarchy.get_clf(level)
                 subset_X, features_used = _limit_and_realign_features(subset_X, features_used, f_names, True)
                 assert list(f_names) == list(features_used), 'Order of f_names and features_used not matching. Aborting...'
-                full_proba, df[level+proba_suffix], df[level+'_class'] = predict_proba_cutoff(subset_X, clf, probability_cutoff)
+                full_proba, df[level+proba_suffix], df[level+'_class'] = _predict_proba_cutoff(subset_X, clf, probability_cutoff)
 
                 if not proba_suffix is None:
                     total_adata.uns[level+proba_suffix] = pd.DataFrame(full_proba,
@@ -517,34 +529,43 @@ def classify(adata: anndata.AnnData,hierarchy: hierarchy.Hierarchy,
         # Attempt to convert to categories and bools to simplify
     cols = total_adata.obsm[key_added].columns
     try:
-        cols = total_adata.obsm[key_added].columns
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_class')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_class')].astype('category')
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_gt')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_gt')].astype('category')
+        logg.info(f'Converting columns in adata.obsm["{key_added}"] to savable dtypes...')
+        total_adata.obsm[key_added][cols[cols.str.contains('_class')]] = \
+        total_adata.obsm[key_added][cols[cols.str.contains('_class')]].astype(str).astype('category')
+        total_adata.obsm[key_added][cols[cols.str.contains('_hc')]] = \
+        total_adata.obsm[key_added][cols[cols.str.contains('_hc')]].astype(str).astype('category')
+        # if len(total_adata.obsm[key_added].loc[total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')].isna()]) > 0:
+        total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')] = \
+        total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')].fillna(False)
+        total_adata.obsm[key_added][cols[cols.str.contains('_holdout')]] = \
+        total_adata.obsm[key_added][cols[cols.str.contains('_holdout')]].astype(bool)
+
+        # if len(total_adata.obsm[key_added].loc[total_adata.obsm[key_added].loc[:,cols.str.contains('_train')].isna()]) > 0:
         total_adata.obsm[key_added].loc[:,cols.str.contains('_train')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_train')].astype(bool)
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_tcounts')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_tcounts')].astype(float)
+        total_adata.obsm[key_added].loc[:,cols.str.contains('_train')].fillna(False)
+        total_adata.obsm[key_added][cols[cols.str.contains('_train')]] = \
+        total_adata.obsm[key_added][cols[cols.str.contains('_train')]].astype(bool)
+        total_adata.obsm[key_added][cols[cols.str.contains('_tcounts')]] = \
+        total_adata.obsm[key_added][cols[cols.str.contains('_tcounts')]].astype(float)
     except Exception as e:
         logg.error(f'Error converting adata.obsm[{key_added}] contents to savable categories',exc_info=1)
     total_adata.obs_names = total_adata_obs_names
     gc.collect()
     return total_adata,hierarchy
 
-def predict_proba_cutoff(X: sp.csr_matrix, clf,
-                         probability_cutoff: float = 0) -> Tuple[np.array, np.array, np.array]: 
-    '''
+def _predict_proba_cutoff(X: sp.csr_matrix, clf,
+                         probability_cutoff: float=0) -> Tuple[np.array, np.array, np.array]: 
+    """
     Predict using the classifier, using the probability cutoff as described. Replace predictions with a ? if they do not match the cutoff.
-    TODO—check that these ?s are properly handled later.
     
     Parameters
     ----------
-    X: scipy.sparse.csr_matrix
+    X
         The matrix of cell features to predict on
-    clf: The classifier to use for predictions
-    probability_cutoff: float between 0 and 1
-        The minimum confidence probability to tolerate before that cells' classification is removed
+    clf
+        The classifier to use for predictions
+    probability_cutoff: 
+        The minimum confidence probability to tolerate before that cells' classification is removed. This feature is experimental.
         
     Returns
     -------
@@ -554,7 +575,7 @@ def predict_proba_cutoff(X: sp.csr_matrix, clf,
         a 1 x n_events array of the probability used for each cell call. 
     predictions: np.array
         a 1 x n_events array of str, designating the class called for each group.
-    '''
+    """
     # predict_proba does not function with int64 encoded sparse matrix indicies (caused by large datasets)
     if X.indices.dtype == np.int64:
         int_max = np.iinfo(np.int32).max
@@ -588,39 +609,39 @@ def predict_proba_cutoff(X: sp.csr_matrix, clf,
             predictions[i] = "?"
     return full_proba, proba, predictions
         
-def ground_truth(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
-                 level: str, data_key: str, 
+def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
+                 level: str, data_key: Optional[str]=utils.DATA_KEY, 
                  plot: bool=False, reference: Optional[str]=None,
-                 batch: Optional[str]=None,log_reference: bool=True) -> pd.DataFrame:
-    '''
-    Thresholding for a list of markers, followed by application of these thresholds to ground truths
-    Note, defaults to using ADT data, and will only use GEX if ADT data does not exist, or if
-    "_gex" is appended to the gene name. If in neither GEX or ADT, checks obs.
+                 batch: Optional[str]=None, log_reference: bool=True) -> pd.DataFrame:
+    """
+    Performs high confidence thresholding using the subset defintions defined in one level of a MMoCHi hierarchy. 
+    Note: This function relies on `mmc.utils.get_data()` for extracting expression information from the adata object. Thus, for each marker it will first search for matching proteins, then genes, and finally the .obs for matching feature names. If '_gex' or '_obs' are appended to the marker name, this priority order Swill be bypassed. 
+
     
     Parameters
     ----------
-    adata: anndata object
+    adata: AnnData object
         Object containing gene expression data, and expression data for modalities for every data key in .obsm
     hierarchy: Hierarchy object 
         Specifies one or more classification levels and subsets.
     level: str
-        Name of a classification level in the hierarchy to threshold and ground truth on
+        Name of a classification level in the hierarchy to threshold and high confidence threshold on
     data_key: str
-        Key in adata.obsm to be used for ground truth thresholding
+        Key in adata.obsm to be used for high confidence thresholding
     plot: bool
         Passed to thresholding.threshold, whether to display histograms of thresholds
     reference: optional, str
-        Column in the adata.obs to be used for logged debug info to reveal how the ground truth function performs       
+        Column in the adata.obs to be used for logged debug info to reveal how the hc_threshold function performs       
     batch: optional, str
         Name of a column in adata.obs that corresponds to a batch for use in the classifier   
     log_reference: bool
-        If true, logs ground truthing information
+        If true, logs high confidence thresholding information
         
     Returns
     -------
     templin: pandas.DataFrame
-        Dataframe of ground truth calls for which classification an event falls into for the specified level of the hierarchy
-    '''
+        Dataframe of high confidence calls for which classification an event falls into for the specified level of the hierarchy
+    """
     # Get necessary information
     markers,values = hierarchy.classification_markers(level)
     
@@ -643,7 +664,7 @@ def ground_truth(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
             
         if not threshold is None:
             hierarchy.set_threshold(marker,threshold, False, level, batch)
-    # Set up and excecute gt clauses
+    # Set up and excecute hc clauses
     clauses = []
     for label,truths in zip(values.keys(),values.values()):
         for single_truths in truths:
@@ -668,17 +689,17 @@ def ground_truth(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     for clause in clauses:
         exec(clause,locals())
     
-    templin[level+'_gt'] = temp['names']
+    templin[level+'_hc'] = temp['names']
 
     if not reference is None:
-        df = pd.crosstab(templin[level+'_gt'],adata.obs[reference]).T
+        df = pd.crosstab(templin[level+'_hc'],adata.obs[reference]).T
         if log_reference:
-            logg.debug('Ground Truth calculated...')
-            logg.debug(f"\n{templin[level+'_gt'].value_counts()}")
+            logg.debug('high confidence populations calculated...')
+            logg.debug(f"\n{templin[level+'_hc'].value_counts()}")
             logg.debug('\n{}'.format(df.to_string()))
         else:
-            logg.print('Ground Truth calculated...')
-            logg.print(templin[level+'_gt'].value_counts())
+            logg.print('high confidence populations calculated...')
+            logg.print(templin[level+'_hc'].value_counts())
             logg.print(df)
     
     return templin
@@ -687,7 +708,7 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
                     level: str, resample_method: Optional[str], 
                     max_training: Optional[int], in_danger_noise_checker: Union[bool,str], 
                     features_used: List[str]) -> Tuple[sp.csr_matrix,pd.DataFrame]:
-    '''
+    """
     Subsets sparse matrix of features into training and testing data
     
     Parameters
@@ -695,9 +716,9 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
     X: sparse matrix
         Subset of matrix of features to subset into training data
     templin: pandas dataframe
-        Dataframe of ground truth calls for which classification an event falls into for the specified level of the hierarchy
+        Dataframe of high confidence calls for which classification an event falls into for the specified level of the hierarchy
     level: str
-        Name of a classification level in the hierarchy to threshold and ground truth on
+        Name of a classification level in the hierarchy to threshold and hc_threshold on
     resample_method: optional, str
         Methods to balance classes, using the imblearn package. Consult their documentation for more details
     max_training: optional, int
@@ -713,15 +734,15 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
         Resampled feature matrix for use in training
     y: np.array()
         Resampled classifications for use in training, corresponding to rows in X
-    '''
-    logg.print('Choosing training data...') # Randomly select ground truth dataset for training purposes...80% train, 20% held out
-    templin[level+'_train'] = False
-    mask = np.random.choice([True,True,True,True,False],size=sum(templin[level+'_gt'] != '?'))
-    templin.loc[templin[level+'_gt'] != '?',level+'_train'] = mask
-    logg.debug(f"Number of events {len(templin[level+'_train'].to_numpy())}")
+    """
+    logg.print('Choosing training data...') # Randomly select high confidence dataset for training purposes...80% train, 20% held out
+    templin[level+'_holdout'] = True
+    mask = np.random.choice([False,False,False,False,True],size=sum(templin[level+'_hc'] != '?'))
+    templin.loc[templin[level+'_hc'] != '?',level+'_holdout'] = mask
+    logg.debug(f"Number of events {len(templin)}")
     logg.debug(f"X.shape: {X.shape}")
-    X = X[templin[level+"_train"].to_numpy()]
-    y = templin[templin[level+'_train']][level+'_gt'].values
+    X = X[~templin[level+"_holdout"].to_numpy()]
+    y = templin[~templin[level+'_holdout']][level+'_hc'].values
     for i in set(y):
         # Remove from classes above max_training size
         total = sum(y==i)
@@ -744,7 +765,7 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
 
 def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_matrix],
                   obs_names: List[str]) -> pd.DataFrame:
-    '''
+    """
     Finds number of duplicates of each cell in training data and creates a dataframe of
     the names from X as indices and the number of that cell as the values
     
@@ -755,9 +776,9 @@ def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_ma
     Parameters
     ----------
     X: Sparse matrix
-        Anndata.X of all data with cells as rows and expression level as columns 
-    training_X: Sparse matrix or anndata object
-        Anndata.X, subset of X, which is also a sparse matrix, duplicate cells allowed
+        AnnData.X of all data with cells as rows and expression level as columns 
+    training_X: Sparse matrix or AnnData object
+        AnnData.X, subset of X, which is also a sparse matrix, duplicate cells allowed
     obs_names: list of str
         Labels for X object, which are used and indicies of outputted dataframe
         
@@ -765,7 +786,7 @@ def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_ma
     -------
     df: pandas dataframe
         Indices are the obs_names and the values are the number of that cell in the training data
-    '''
+    """
     r = range(1,X.shape[1] + 1)
     L2_training_X = training_X.multiply(1/(training_X.multiply(training_X).sum(axis=1))).multiply(r).sum(axis=1)
     L2_X = X.multiply(1/(X.multiply(X).sum(axis=1))).multiply(r).sum(axis=1)
@@ -776,7 +797,7 @@ def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_ma
 
 def _in_danger_noise(nn_estimator, samples: List[Tuple[anndata.AnnData, sp.csr_matrix]],
                      y: Union[anndata.AnnData, sp.csr_matrix]) -> np.array:
-    '''
+    """
     Estimate if a set of sample are in danger or noise.
     Adapted from BorderlineSMOTE and SVMSMOTE of the imblearn package.
     Note that this function relies on scanpy's implementations of HVGs and PCA, but there may be a better approach computationally for this.
@@ -802,7 +823,7 @@ def _in_danger_noise(nn_estimator, samples: List[Tuple[anndata.AnnData, sp.csr_m
             1 if just in danger
             2 if just noise
             3 if both
-    '''
+    """
     logg.debug('kneighbors for in danger noise')
     x = nn_estimator.kneighbors(samples, return_distance=False)[:, 1:]
     items = np.zeros(samples.shape[0])
@@ -816,7 +837,7 @@ def _in_danger_noise(nn_estimator, samples: List[Tuple[anndata.AnnData, sp.csr_m
         noise = ((n_maj >= nn_estimator.n_neighbors - 2)  & (y == target_class)).astype(int) * 2
         items = items+danger+noise
 
-    # Targets can also be labelled "in danger" if they are clustered in a small cluster that's not well-represented
+    # Targets can also be labeled "in danger" if they are clustered in a small cluster that's not well-represented
     leiden = nn_estimator.cluster()
     crosstab = pd.crosstab(leiden,y)
     logg.debug(crosstab)
@@ -827,7 +848,7 @@ def _in_danger_noise(nn_estimator, samples: List[Tuple[anndata.AnnData, sp.csr_m
                 items[(leiden == k) & (y == i) & (items==0)] = 2
     return items
     
-class HVF_PCA_Neighbors():
+class _HVF_PCA_Neighbors():
     def __init__(self,features_used,**kwargs):
         self.features_used = np.array(features_used)
         self.feature_modalities = np.array([x.split('_mod_')[-1] for x in features_used])
@@ -835,8 +856,8 @@ class HVF_PCA_Neighbors():
         self.neighbors = sklearn.neighbors.NearestNeighbors(**kwargs)
         self.n_neighbors = self.neighbors.n_neighbors
         self.leiden = None
-    def fit(self,X: Union[np.array, sp.csr_matrix]):
-        '''
+    def fit(self, X: Union[np.array, sp.csr_matrix]):
+        """
         Runs PCA on the highly variable features of self
         
         Parameters
@@ -845,12 +866,12 @@ class HVF_PCA_Neighbors():
             Self.X
         Returns
         -------
-        self: HVF_PCA_Neighbors object
+        self: _HVF_PCA_Neighbors object
             Modified with X_pca column in .obsm with PCA of the highly variable features
-        '''
+        """
         self.hvf = []
         for i in self.modalities:
-            logg.debug(f'Calculating HVFs for {i}')
+            logg.debug(f'Computing HVFs for {i}')
             if self.modalities[i] < 5000:
                 self.hvf.extend(self.features_used[self.feature_modalities == i])
             else:
@@ -858,7 +879,7 @@ class HVF_PCA_Neighbors():
                                         var = pd.DataFrame(index=self.features_used[self.feature_modalities == i]))
                 sc.pp.highly_variable_genes(adata,n_top_genes = 5000)
                 self.hvf.extend(adata.var_names[adata.var.highly_variable].tolist())
-        logg.debug('PCA for fit for HVF_PCA_Neighbors')   
+        logg.debug('PCA for fit for _HVF_PCA_Neighbors')   
         adata = anndata.AnnData(X=X[:,[i in self.hvf for i in self.features_used]],dtype=np.float32)
         sc.pp.scale(adata,zero_center=False)
         sc.tl.pca(adata,n_comps=15)
@@ -873,8 +894,8 @@ class HVF_PCA_Neighbors():
     def kneighbors_graph(self,*args,**kwargs):
         return self.neighbors.kneighbors_graph(**kwargs)
     def cluster(self):
-        '''
-        TODO implement neighbors and leiden calculations that do not depend on scanpy'''
+        """
+        TODO implement neighbors and leiden calculations that do not depend on scanpy"""
         if self.leiden is None:
             adata = anndata.AnnData(X=self.pca,dtype=np.float32)
             adata.obsm['X_pca'] = self.pca
@@ -892,21 +913,21 @@ class HVF_PCA_Neighbors():
     def get_params(self,**kwargs):
         return self.neighbors.get_params(**kwargs)
 
-def borderline_balance(nn_estimator, X: sp.csr_matrix,
+def _borderline_balance(nn_estimator, X: sp.csr_matrix,
                        y: np.array, min_cluster_size: float=0.01) -> Tuple[sp.csr_matrix, np.array]:
-    '''
+    """
     Uses nearest neighbors clustering to cluster data in y, and for clusters larger than the minimum cluster size, duplicates events in training data to 
     equalize its representation.
     
     Parameters
     ----------
-    nn_estimator: estimator 
+    nn_estimator
         nearest neighbor clustering estimator, must have .cluster method
-    X: sp.csr_matrix
-        .X column that references the same anndata object as Y
-    y: np.Array
+    X
+        .X column that references the same AnnData object as Y
+    y
         Data to cluster
-    min_cluster_size: float (0,1)
+    min_cluster_size
         Minimum fraction of all classes that a cluster must contain
     
     Returns
@@ -915,7 +936,7 @@ def borderline_balance(nn_estimator, X: sp.csr_matrix,
         .X column of clustered data
     y: np.Array
         Clustered data
-    '''
+    """
     leiden = nn_estimator.cluster()
     crosstab = pd.crosstab(leiden,y)
     mins = crosstab.div(crosstab.sum(axis=0)).min(axis=1)
@@ -945,14 +966,14 @@ def borderline_balance(nn_estimator, X: sp.csr_matrix,
 def _balance_training_classes(X: sp.csr_matrix, y: np.array,
                               features_used: List[str], method: Optional[str]=None,
                               max_training: Optional[int]=None, 
-                              in_danger_noise_checker: bool=True) -> Tuple[sp.csr_matrix, np.array]:
-    '''
+                              in_danger_noise_checker: Union[bool,str]=True) -> Tuple[sp.csr_matrix, np.array]:
+    """
     Methods to balance classes, using the imblearn package. Consult their documentation for more details
     
     Parameters
     ----------
     X: sparse matrix
-         .X column that references the same anndata object as Y
+         .X column that references the same AnnData object as y
     y: np.Array
         Data to sample and balance
     features_used: Listlike of str
@@ -961,7 +982,7 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
         Method used to balance training classes (over or undersampling)
     max_training: int
         Maximum length of y data to be used in training, if len(y) > max_training will randomly subsample x and y
-    in_danger_noise_checker: bool or str, if str can include "danger" "noise", or both
+    in_danger_noise_checker: bool or str, if str can include "danger", "noise", or both
         Whether to remove noise data and boost in danger data points
         True is equivalent to "danger and noise"
         
@@ -971,10 +992,10 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
         Resampled feature matrix, with balanced classes
     y: np.array()
         Resampled classifications for use in training, corresponding to rows in X
-    '''
+    """
     if in_danger_noise_checker or method in ['SMOTE','BorderlineSMOTE','KMeansSMOTE']:
         logg.debug('begining HVF PCA NEIGHBORS')
-        k_neighbors = HVF_PCA_Neighbors(features_used,n_jobs=-1,n_neighbors=10).fit(X)
+        k_neighbors = _HVF_PCA_Neighbors(features_used,n_jobs=-1,n_neighbors=10).fit(X)
 
     if in_danger_noise_checker:
         if type(in_danger_noise_checker) is bool:
@@ -1006,7 +1027,7 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
             logg.debug('Not finding danger')
             
         if 'rebalance' in in_danger_noise_checker:
-            X, y = borderline_balance(k_neighbors,X,y)
+            X, y = _borderline_balance(k_neighbors,X,y)
 
     if method == "oversample":
         sample = imblearn.over_sampling.RandomOverSampler()
@@ -1026,16 +1047,17 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
         X,y = sklearn.utils.resample(X,y, replace=False,n_samples=max_training)
     return X,y
 
-def terminal_names(adata: anndata.AnnData, obs_column: str = 'classification',
-                   confidence_column: str = 'conf' ,conf_drops: Union[float, List[float]]=None,
+def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
+                   confidence_column: str='conf', conf_drops: Union[float, List[float]]=None,
                    key_added: str='lin', voting_reference: str = None, 
                    majority_min: float=.9) -> anndata.AnnData:
-    '''
-    Create a column in the .obs featuring the horizonal concatenation (rightward has priority) of classifications in the key_added
+    """
+    Create a column in the .obs featuring the most specific classification/subset for each event. Uses horizonal concatenation (rightward has
+    priority) of classifications in the adata.obsm[key_added]
     
     Parameters
     ----------
-    adata: anndata object 
+    adata: AnnData object 
         Object containing gene expression data, and expression data for modalities for every data key in .obsm
     obs_column: str
         Column in the .obs to add to the andata containing the classification 
@@ -1052,9 +1074,9 @@ def terminal_names(adata: anndata.AnnData, obs_column: str = 'classification',
     
     Returns 
     -------
-    anndata: anndata object
+    AnnData: AnnData object
         Contains a new column for classifications and potentially a column for confidences
-    '''
+    """
     # ID classification columns
     class_names = [x for x in adata.obsm[key_added].columns if "_class" in x][1:]
     names_matrix = adata.obsm[key_added].loc[:,class_names].astype(str)
@@ -1112,23 +1134,23 @@ def terminal_names(adata: anndata.AnnData, obs_column: str = 'classification',
         adata.obs['majority_voting'] = adata.obs[voting_reference].map(majority).fillna(adata.obs[obs_column])
         return adata
     
-def idenitfy_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[str]],
+def identify_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[str]],
                            group2: Union[str, Iterable[str]]=[],
                            batch_val: Optional[Union[str, Iterable[str]]]=None, 
-                           batch: str='donor',
-                           reference: str='leiden',key_added: str='groups',
+                           batch: str=utils.BATCH_KEY,
+                           reference: str='leiden', key_added: str='groups',
                            filtered: bool=False, plot: bool=True, 
-                           min_fold_change: int=2,min_in_group_fraction: float=.5,
+                           min_fold_change: int=2, min_in_group_fraction: float=.5,
                            max_out_group_fraction: float=0.25, n_ups: int=29,
-                           n_downs: int=30,use_raw: bool=False, return_df: bool=True) -> pd.DataFrame:
-    '''
-    
+                           n_downs: int=30, use_raw: bool=False, return_df: bool=True) -> pd.DataFrame:
+    """
+    Calculates differentially expressed genes between two provided groups (specified in the .obs).
     Built on scanpy.tl.rank_genes_groups
     Use https://scanpy.readthedocs.io/en/stable/generated/scanpy.tl.rank_genes_groups.html for further details and documentation.
     
     Parameters
     ----------
-    adata: anndata object 
+    adata: AnnData object 
         Logarithmic data
     group1: Union[str, Iterable[str]]
         Subset of groups to compare on, see sc.tl.rank_genes_groups for more detailed documentation
@@ -1163,7 +1185,7 @@ def idenitfy_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
     -------
     df: pandas df 
         If return_df, returns pandas df of genes ranked in their ability to characterize group 1 
-    '''
+    """
     adata.obs[key_added] = 'outgroup'
     group1 = group1 if isinstance(group1,list) else [group1]
     group2 = group2 if isinstance(group2,list) else [group2]
@@ -1211,6 +1233,7 @@ def idenitfy_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
         else:
             ups,downs = df.names.to_list(), []
         sc.pl.umap(adata[batch_mask], color=[key_added]+ups+downs, cmap='jet', s=10,ncols=6)
+        gc.collect()
     
     if return_df:
         return df

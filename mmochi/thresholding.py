@@ -18,12 +18,12 @@ def run_threshold(markname: str, adata: anndata.AnnData,
     
     Parameters
     ----------
-    markname: str
+    markname
         Name of the marker
-    adata: anndata object
-    data_key: optional, str
+    adata
+    data_key
         Name of the key in .obsm[] to look for when searching for markname
-    thresh: tuple of numerics
+    thresh
         Upper and lower thresholds to apply for positive and negative populations
     
     Returns
@@ -40,9 +40,9 @@ def _run_threshold(data: np.array, thresh: Sequence[Union[int,float]]) -> np.arr
     
     Parameters
     ----------
-    data: np array of numerics
+    data
         Data to threshold
-    thresh: listlike of numerics
+    thresh
         The max and min of this list are used as thresholds
     returns
     -------
@@ -55,27 +55,27 @@ def _run_threshold(data: np.array, thresh: Sequence[Union[int,float]]) -> np.arr
     return thresholded
 
 def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
-                    msw: Tuple[Tuple[float],Tuple[float],Tuple[float]], markname_full: str,
+                    msw: Tuple[Tuple[float], Tuple[float],Tuple[float]], markname_full: str,
                     title_addition: str='') -> None:
     '''
     Using the thresholds provided, perform and plot thresholding
     
     Parameters
     ----------
-    data: np array of numerics
+    data
         Data to threshold and display
-    thresh: listlike of numerics
+    thresh
         The max and min of this list are used as thresholds
-    msw: tuple of
+    msw
         m: tuple of floats
             the means of peaks in the gaussian mixture model
         s: tuple of floats
             the standard deviation of these peaks, 
         w: tuple of floats
             the weights (heights) of these peaks
-    markname_full: str
+    markname_full
         Name of the marker, to be used in the title of the graph
-    title_addition: str
+    title_addition
         Other information you would like to include in the title after the markername
         
     Returns
@@ -88,15 +88,15 @@ def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
     fig = plt.figure(figsize=(8,2),dpi=75)
     hist = plt.hist((data[data>max(thresh)],data[data<min(thresh)],
                      data[(data>min(thresh)) & (data<max(thresh))]),
-                     bins=100,stacked=True,density=True)
+                     bins=100,stacked=True,density=True, color=['#ff7f0e',  '#1f77b4', '#2ca02c']) 
     if not msw is None:
         (m,s,w) = msw
         x = np.linspace(0,max(data), 10000)
-        plt.plot(x, norm.pdf(x, m[0], s[0])*w[0],c='orange')
+        plt.plot(x, norm.pdf(x, m[0], s[0])*w[0],c='blue')
         if len(m) > 1:
             loc = np.linspace(m[0],m[1], 10000)
             comb = sum([norm.pdf(loc, mm, ss)*ww for mm, ss, ww in zip(m, s, w)])
-        plt.plot(x, norm.pdf(x, m[-1], s[-1])*w[-1],c='blue')
+        plt.plot(x, norm.pdf(x, m[-1], s[-1])*w[-1],c='orange')
         if len(m) > 2:
             plt.plot(x,norm.pdf(x, m[1], s[1])*w[1],c='green')
         if len(m) > 1:
@@ -120,13 +120,12 @@ def _interactive_threshold(thresh: Tuple[float, float]) -> Tuple[float, float]:
     
     Parameters
     ----------
-    thresh: tuple of floats
+    thresh
         Default uppper and lower thresholds to use
     
     Returns
     -------
-    thresh: tuple of floats
-        New upper and lower thresholds
+    New upper and lower thresholds
     '''
     if thresh is None or not isinstance(thresh, tuple) or not len(thresh) == 2:
         thresh = tuple(0,0)
@@ -144,8 +143,7 @@ def _interactive_threshold(thresh: Tuple[float, float]) -> Tuple[float, float]:
         lower_thresh = min(thresh)
     return (upper_thresh,lower_thresh)
 
-def _fancy_interactive_threshold(thresh: Tuple[Union[int, float]],maximum:Union[int,float]) -> Tuple[ipywidgets.widgets.widget_float.FloatSlider, 
-                                                                                                     ipywidgets.widgets.widget_float.FloatSlider]:
+def _fancy_interactive_threshold(thresh: Tuple[Union[int, float]], maximum:Union[int,float]) -> Tuple[ipywidgets.widgets.widget_float.FloatSlider, ipywidgets.widgets.widget_float.FloatSlider]:
     '''
     Function to generate sliders beneath a donor for upper and lower thresholds.
     
@@ -189,42 +187,47 @@ def _fancy_resolver(promise: Tuple[float]) -> Tuple[float,float]:
     return tuple(sorted((promise[0].value,promise[1].value)))
 
 def threshold(markname: str, adata: anndata.AnnData,
-              data_key: str=None, preset_threshold: Tuple[Union[int, float]]=None,
+              data_key: str=utils.DATA_KEY, preset_threshold: Tuple[Union[int, float]]=None,
               include_zeroes: bool=False, n: int=0,
-              force_model: bool = False, plot: bool=True,
+              force_model: bool=False, plot: bool=True,
               title_addition: str='', interactive: bool=True,
               fancy: bool=False,
-              run: bool=False) -> Union[Tuple[float,float], Tuple[Tuple[float,float], anndata.AnnData]]:
+              run: bool=False) -> Union[Tuple[float,float], Tuple[Tuple[float,float], List[str]]]:
     '''
-    Bimodal thresholding for markers.
+    Performs thresholding for markers, and optionally returns thresholds as well as thresholded events.
+    Thresholded events are returned as a list of "pos" for positive (above the higher threshold), "neg" for 
+    negative (below the lower threshold), and "?" for undefined (between the two thresholds).
+    
     Runs utils.get_data() to identify the data.
-    Calculates optimal thresholds and optional displays and/or runs thresholding on the data
+    Automatically calculates threshold, and has options for display of these thresholds on a histogram.
     
     Parameters
     ----------
-    markname: str
-        Name of the marker being used
-    adata: anndata dataframe
-        Dataframe to create thresholds on, containing datakey to find thresholds
-    data_key: str
-        Name of the key in .obsm[] to look for when searching for markname
-    present_threshold: tuple of numerics
+    markname
+        Name of the marker being used. Markers can also have "_lo" or "_hi" appeneded to them to specify
+        multiple thresholds on the same marker at the same level.
+    adata
+        AnnData object for creating thresholds, containing expression in the .X and/or the .obsm[data_key] 
+    data_key
+        Name of the key in .obsm to look for when searching for markname
+    present_threshold
         Max and minimum thresholds to apply for positive and negative populations, overrides calculation
-    included_zeroes: bool
+    included_zeroes
         Whether to include zeroes when calculating the gaussian mixture
-    n: int, 0, 1, or 2
-        Determines the number thresholds that should be defined
-    force_model: bool
+    n
+        Determines the number of gaussians to fit. Can be 1, 2, or 3.
+    force_model
         Whether to force the creation of a gaussian mixture model. If preset thresholds are defined, this model is only used to create msw
-    plot: bool
+    plot
         Whether to display plots from _plot_threshold
-    title_addition: str
+    title_addition
         Other information you would like to include in the title after the markername
-    interactive: bool
+    interactive
         Whether to prompt the user to enter thresholds (uses defaults if invalid entry)
-    fancy: bool
-        Whether to create adjustable float sliders to enter thresholds
-    run: bool
+    fancy
+        Whether to create adjustable float sliders to enter thresholds. Returns a list of float sliders. This should only be used by the 
+        run_all_thresholds command.
+    run
         Whether to run the thresholding to return thresholded data
     Returns
     -------
@@ -255,11 +258,11 @@ def threshold(markname: str, adata: anndata.AnnData,
         return thresh
     
 def _calc_threshold(markname: str, adata: anndata.AnnData,
-                    data_key: str=None, n: int=0,
+                    data_key: str=utils.DATA_KEY, n: int=0,
                     include_zeroes: bool=False, preset_threshold: Tuple[Union[int,float]]=None,
                     force_model: bool=False) -> Tuple[anndata.AnnData, Tuple[float,float], Tuple[Tuple[float, ...], Tuple[float,...], Tuple[float, ...]], str]:
     '''
-        Internal function to handle threshold making
+        Internal function to handle threshold making.
         
         Gets the data using utils.get_data, determines if 0's should be kept in the data, then creates a gaussian mixture model of either 1 or 2 compoenents. 
         The fit of these models are compared and if only use the 2 component mix if it fits significantly better than the 1 component model. Calculate means, 
@@ -268,24 +271,24 @@ def _calc_threshold(markname: str, adata: anndata.AnnData,
         
         Parameters
         ----------
-        markname: str
+        markname
             name of the marker
-        adata: anndata object
-           Dataframe to create thresholds on, containing datakey to find thresholds 
-        data_key: str
+        adata
+        AnnData object for creating thresholds, containing expression in the .X and/or the .obsm[data_key] 
+        data_key
            Name of the key in .obsm[] to look for when searching for markname
-        n: int, 0, 1, or 2
-            Determines the number thresholds that should be defined
-        include_zeroes: bool
+        n
+            Determines the number of gaussians to fit. Can be 1, 2, or 3.
+        include_zeroes
             Whether to include zeroes when calculating the gaussian mixture
-        preset_threshold: tuple of numerics
+        preset_threshold
             Max and minimum thresholds to apply for positive and negative populations, overrides calculation
-        force_model: bool
+        force_model
             Whether to force the creation of a gaussian mixture model. If preset thresholds are defined, this model is only used to create msw
         
         Returns
         -------
-        data: anndata object
+        data: AnnData object
             Data used to find threshold
         thresh: tuple of numerics
             Population differentiating thresholds, length is equal to n

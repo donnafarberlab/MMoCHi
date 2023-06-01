@@ -10,3 +10,10 @@ treelib>=1.6.1
 matplotlib>=3.5.1
 leidenalg>=0.8.9
 tqdm
+ipywidgets>=7.7.0
+pydot>=1.4.2
+tqdm>=4.64.0
+scikit-fda>=0.5
+seaborn>=0.11.2
+ipython>=8.4.0
+scikit-fda>=0.5

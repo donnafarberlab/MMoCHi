@@ -1,7 +1,7 @@
 import logging
 import sys
 
-def addLoggingLevel(levelName, levelNum, methodName=None):
+def _addLoggingLevel(levelName, levelNum, methodName=None):
     """
     Comprehensively adds a new logging level to the `logging` module and the
     currently configured logging class.
@@ -18,7 +18,7 @@ def addLoggingLevel(levelName, levelNum, methodName=None):
 
     Example
     -------
-    >>> addLoggingLevel('TRACE', logging.DEBUG - 5)
+    >>> _addLoggingLevel('TRACE', logging.DEBUG - 5)
     >>> logging.getLogger(__name__).setLevel("TRACE")
     >>> logging.getLogger(__name__).trace('that worked')
     >>> logging.trace('so did this')
@@ -50,23 +50,23 @@ def addLoggingLevel(levelName, levelNum, methodName=None):
     setattr(logging.getLoggerClass(), methodName, logForLevel)
     setattr(logging, methodName, logToRoot)
 
-addLoggingLevel('PRINT',logging.DEBUG+5)
+_addLoggingLevel('PRINT',logging.DEBUG+5)
 
 logg = logging.getLogger(__name__)
 level_names = dict(INFO=logging.INFO, PRINT=logging.PRINT, DEBUG=logging.DEBUG, 
                    WARNING=logging.WARNING, ERROR=logging.ERROR)
 
-class OneLevelStreamHandler(logging.StreamHandler):
+class _OneLevelStreamHandler(logging.StreamHandler):
     def emit(self, record):
         if record.levelno == self.level:
             super().emit(record)
 
-class OneLevelFileHandler(logging.FileHandler):
+class _OneLevelFileHandler(logging.FileHandler):
     def emit(self, record):
         if record.levelno == self.level:
             super().emit(record)
 
-def initiate_log():
+def _initiate_log():
     '''Creates a log files with the name log_file'''
     logging.basicConfig(format="%(levelname)s - %(message)s",level=logging.INFO)
     logg.propagate = False
@@ -77,7 +77,7 @@ def initiate_log():
     errStreamHandler.setLevel(logging.INFO)
     logg.addHandler(errStreamHandler)
     
-    stoutStreamHandler = OneLevelStreamHandler(sys.stdout)
+    stoutStreamHandler = _OneLevelStreamHandler(sys.stdout)
     stoutStreamHandler.setFormatter(logging.Formatter("%(message)s"))
     stoutStreamHandler.setLevel(logging.PRINT)
     logg.addHandler(stoutStreamHandler)
@@ -86,7 +86,17 @@ def initiate_log():
     logg.debug('Set up logger.')
     return
 
-def log_to_file(file_name,file_mode='w'):
+def log_to_file(file_name, file_mode='w'):
+    '''
+    Enable logging for all functions in the MMoCHi package
+    
+    Parameters
+    ----------
+    file_name
+        The file path and file name (without a ".log" suffix) detailing where a log file should be saved.
+    file_mode
+        Etiher "w" to overwrite a preexisting file, or "a" to append logs to a preexisting file. 
+    '''
     fileHandler = logging.FileHandler(f'{file_name}.log',mode=file_mode)
     fileHandler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     fileHandler.setLevel(logging.DEBUG)

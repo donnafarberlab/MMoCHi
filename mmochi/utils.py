@@ -5,25 +5,28 @@ import pandas as pd
 import numpy as np
 from typing import Union, Optional, Sequence, Any, Mapping, List, Tuple, Callable
 import scanpy as sc
+import gc
 from .logger import logg
 
-def convert_10x(adata: anndata.AnnData, drop_totalseq: bool = True, data_key: str = 'protein'):
+DATA_KEY = 'landmark_protein'
+BATCH_KEY = 'batch'
+
+def convert_10x(adata: anndata.AnnData, drop_totalseq: bool=True, data_key: str='protein'):
     '''
-    Convert default 10X data to an anndata with protein in the .obsm, and gene expression in the .X
+    Convert default 10X data to an AnnData with protein in the .obsm, and gene expression in the .X
     
     Parameters
     ----------
-    adata: anndata object
-        10X provided anndata object
-    drop_totalseq: bool
+    adata
+        10X provided AnnData object
+    drop_totalseq
         If true, removes '_TotalSeq' from the end of .obsm[data_key] values
-    data_key: str
+    data_key
         Name of data in .obsm to convert 
         
     Returns 
     -------
-    adata: anndata object
-        Dataframe with 'Antibody Capture' data moved to .obsm[data_key]
+        AnnData object with 'Antibody Capture' data moved to .obsm[data_key]
     '''
     adata.obsm[data_key] = pd.DataFrame(index=adata.obs_names)
     for i in adata.var_names[adata.var.feature_types=='Antibody Capture']:
@@ -33,7 +36,7 @@ def convert_10x(adata: anndata.AnnData, drop_totalseq: bool = True, data_key: st
         adata.obsm[data_key].columns = pd.Series(adata.obsm[data_key].columns).str.split('_TotalSeq',expand=True)[0].values
     return adata
 
-def default_kwargs(kwargs: dict, defaults: dict) -> dict:
+def _default_kwargs(kwargs: dict, defaults: dict) -> dict:
     '''
     Helper function to combine lists of kwargs with defaults, if no kwargs is specified will use defaults instead
     '''
@@ -42,21 +45,21 @@ def default_kwargs(kwargs: dict, defaults: dict) -> dict:
             kwargs[key] = defaults[key]
     return kwargs
 
-def intersect_features(adatas: List[anndata.AnnData], data_key: str = 'protein') -> List[anndata.AnnData]:
+def intersect_features(adatas: List[anndata.AnnData], data_key: str=DATA_KEY) -> List[anndata.AnnData]:
     '''
-    Subsets each anndata object to only genes and values of data_key found in every anndata objects
+    Subsets each AnnData object to only genes and values of data_key found in every AnnData objects
     
     Parameters
     ----------
-    adatas: anndata object
-        Each anndata object must have gene names in .var_names and must have the specified data_key in .obsm
-    data_key: str
-        Each anndata object's .obsm must have data_key as one of its fields
+    adatas
+        Each AnnData object must have gene names in .var_names and must have the specified data_key in .obsm
+    data_key
+        Each AnnData object's .obsm must have data_key as one of its fields
         
     Returns 
     -------
-    adatas: anndata object
-        List of anndata objects with same fields as inputted object, but containing information on only genes and 'data_key' that exists in every object
+    adatas
+        List of AnnData objects with same fields as inputted object, but containing information on only genes and 'data_key' that exists in every object
     '''
     intersection_GEX = list(set.intersection(*(set(val) for val in [adata.var_names for adata in adatas])))
     if not data_key is None:
@@ -68,54 +71,53 @@ def intersect_features(adatas: List[anndata.AnnData], data_key: str = 'protein')
         adatas[i] = adata
     return adatas
 
-def preprocess_adatas(adatas: Union[anndata.AnnData, List[anndata.AnnData], str, List[str]] = None, 
-                      convert_from_10X: bool = True,
-                      make_unique: bool = True,
-                      drop_totalseq: bool = True, 
-                      intersect: bool = True, 
-                      backup_urls: Union[str, List[str]] = None,
-                      data_key: str = 'protein',
+def preprocess_adatas(adatas: Union[anndata.AnnData, List[anndata.AnnData], str, List[str]]=None, 
+                      convert_from_10X: bool=True,
+                      make_unique: bool=True,
+                      drop_totalseq: bool=True, 
+                      intersect: bool=True, 
+                      backup_urls: Union[str, List[str]]=None,
+                      data_key: str='protein',
                       log_CP_GEX: int=1e4,
                       log_CP_ADT: int=1e2):
     
     '''
-    Function to load and preprocess adatas from either filename or backup_url
+    Function to load and preprocess adatas from either filename(s) or backup_url(s). 
     
     Parameters 
     ----------
-    adatas: anndata or list of anndatas
-        Individual or list of filepaths or anndata objects 
-    convert_from_10X: bool
-        Determines whether to convert from 10x data style to TODO
-    make_unique: bool
-        Determines whether to make labels in anndata objects unique by adding '-1' etc. to duplicates
-    drop_totalseq: bool
+    adatas
+        Individual or list of filepaths or AnnData objects 
+    convert_from_10X
+        Determines whether to convert from 10x data style
+    make_unique
+        Determines whether to make labels in AnnData objects unique by adding '-1' etc. to duplicates
+    drop_totalseq
         Determines whether to drop '_TotalSeq' from the data_key labels
-    intersect: bool
+    intersect
         Determines whether to subset each dataframe to 'data_key' and gene expression data only found on all dataframes
-    backup_urls: str or list of str
-        A string or list of strings of urls to the anndata objects to be used if the filepath does not work
-    data_key: str
+    backup_urls
+        A string or list of strings of urls to the AnnData objects to be used if the filepath does not work
+    data_key
         Must be in .obsm, name used for data intersection and adt normalization
-    log_CP_GEX: bool or int
+    log_CP_GEX
         Normalizes Gene expression data to log of 1 + counts per this value, default 1000
-    log_CP_ADT: bool or int
+    log_CP_ADT
         Normalizes ADT data to log of 1 + counts per this value, default 10
         
     Returns
     -------
-    adatas
-        List of anndata object(s)
-            if make unique:
-                containing unique obs and var labels, with duplicates named '-1', '-2' etc. 
-            if convert_from_10x:
-                with protein data moved to the .obsm
-            if intersect:
-                containing only the subset of genes and 'data_key' that exists in all objects
-            if log_CP_GEX:
-                log normalized gene counts per x value (default 1000)
-            if log_CP_ADT: 
-                log normalized 'data_key' counts per x value (default 10)
+    List of AnnData object(s)
+        if make unique:
+            containing unique obs and var labels, with duplicates named '-1', '-2' etc. 
+        if convert_from_10x:
+            with protein data moved to the .obsm
+        if intersect:
+            containing only the subset of genes and 'data_key' that exists in all objects
+        if log_CP_GEX:
+            log normalized gene counts per x value (default 1000)
+        if log_CP_ADT: 
+            log normalized 'data_key' counts per x value (default 10)
      '''
     if isinstance(adatas, anndata.AnnData) or isinstance(adatas,str):
         adatas = [adatas]
@@ -166,17 +168,17 @@ def batch_iterator(adata: anndata.AnnData, batch_key: str,
     
     Parameters
     ----------
-    adata: anndata object
-    batch_key: str
+    adata
+    batch_key
         Column within the adata.obs that delineates batches
-    sort: bool
+    sort
         Whether to sort the batch names according to the sorted() function
     
     Returns 
     -------
-    batch_masks: list of list of bool
+    batch_masks
         Boolean masks for each of the batches in batch_key
-    batches: list of str
+    batches
         The names of the batches in the batch_key column of adata.obs
     '''
     batch_masks, batches = [], []
@@ -191,43 +193,43 @@ def batch_iterator(adata: anndata.AnnData, batch_key: str,
             batches.append(batch_id)
     return batch_masks, batches
 
-def obsm_to_X(adata: anndata.AnnData, data_key: str='protein') -> anndata.AnnData:
+def obsm_to_X(adata: anndata.AnnData, data_key: str=DATA_KEY) -> anndata.AnnData:
     '''
-    Makes the .obsm[data_key] of an anndata object into its .X
+    Makes the .obsm[data_key] of an AnnData object into its .X
     
     Parameters
     ----------
-    adata: anndata object
-    data_key: str
+    adata
+    data_key
         key in the adata.obsm to convert to the .X of this new adata
     Returns 
     -------
-    adata_new: anndata object
-        Object with .X of anndata.obsm[data_key]
+    adata_new
+        Object with .X of AnnData.obsm[data_key]
     '''
     adata_new = anndata.AnnData(adata.obsm[data_key],adata.obs,pd.DataFrame(index=adata.obsm[data_key].columns),dtype=float)
     return adata_new
 
-def _marker(keyword: str, cols: List[str], allow_multiple: bool = False) -> Union[List[str], str]:
+def _marker(keyword: str, cols: List[str], allow_multiple: bool=False) -> Union[List[str], str]:
     '''
     Function to search for a marker in a list or listlike of markers
     
     Parameters
     ----------
-    keyword: str
+    keyword
         Name of the marker you wish to search for
-    cols: Listlike of str
+    cols
         List of marker names in which to search for [keyword]
-    allow_multiples: bool
+    allow_multiples
         Whether to return a list of matches if there are multiple mathches or throw an error
         
     Returns 
     -------
     if allow_multiples 
-        marker_names: List of str
+        marker_names
             Names of the marker in cols
     else 
-        marker_name: str
+        marker_name
             Name of the marker in cols
     '''
     keyword = keyword.lower()
@@ -250,36 +252,36 @@ def _marker(keyword: str, cols: List[str], allow_multiple: bool = False) -> Unio
         return marker_name[0]
 
 def marker(adata: anndata.AnnData, parameter: Union[str, List[str]], 
-           data_key: Optional[str]='protein', allow_multiple: bool = False) -> Union[str, List[str]]:
+           data_key: Optional[str]=DATA_KEY, allow_multiple: bool=False) -> Union[str, List[str]]:
     '''
     Lookup a marker name within the .X or the .obsm[data_key]
     
     Parameters
     ----------
-    adata: anndata object
+    adata
         Object with data in adata.X or adata.obsm[data_key]
-    parameter: str or list of str
+    parameter
         Parameters to search for in adata
-    data_key: optional, str
+    data_key
         Location in the .obsm to look for marker name
-        If None, searches adata.var.index
-    allow_multiple: bool
+        If None, searches adata.var_names
+    allow_multiple
         Whether to return a list of matches if there are multiple mathches or throw an error
         
     Returns 
     -------
     if allow_multiples 
-        marker_names: List of str
+        marker_names
             Names of the marker in the adata object
     else 
-        marker_name: str
+        marker_name
             Name of the marker in the adata object
     '''
     
     if not data_key is None:
         cols = adata.obsm[data_key].columns.to_list()
     else:
-        cols = adata.var.index.to_list()
+        cols = adata.var_names.to_list()
     
     if isinstance(parameter, list): # Run recursively if it's a list of inputs
         results = []
@@ -293,30 +295,30 @@ def marker(adata: anndata.AnnData, parameter: Union[str, List[str]],
         return _marker(parameter, cols, allow_multiple)
         
 def umap_thresh(adata: anndata.AnnData, h,
-                markers: List[str]=None, batch_key: str='donor',
-                data_key: Optional[str]='protein', umap_basis: str='X_umap',
-                cmap: Optional[List[str]] =None ,**kwargs):
+                markers: List[str]=None, batch_key: str=BATCH_KEY,
+                data_key: Optional[str]=DATA_KEY, umap_basis: str='X_umap',
+                cmap: Optional[List[str]]=None ,**kwargs):
     '''
-    Creates a umaps for the listed markers with expression data for the markers overlayed on top. 
-    This visualization can be useful to see where protein and genes are expressed in the umap
+    Plots UMAPs for the listed markers with thresholded expression data for the markers overlayed on top. 
+    This visualization can be useful to see where protein and genes are expressed in the UMAP.
     
     Parameters
     ----------
-    adata: anndata object
-    h: hierarchy object
-    markers: list of str
-        Markers to create umaps for
-        If None (default), creates umap for all markers 
-    batch_key: str
-        Name of batch in adata to use for umap, uses batch_iterator to find key
-    data_key: optional, str
+    adata
+    h
+    markers
+        Markers to create UMAPs for
+        If None (default), creates UMAP for all markers 
+    batch_key
+        Name of batch in adata to use for UMAP, uses batch_iterator to find key
+    data_key
         Location in the .obsm to look for marker name
-        If None, searches adata.var.index
-    umap_basis: str
+        If None, searches adata.var_names
+    umap_basis
         Passed to scanpy.pl.embedding as basis
-    cmap: list of colors to use or matplotlib colormap
-        Color map information used to color the gene expressions on the umap
-    kwargs: dict
+    cmap
+        List of colors or color map information used to color the feature expression on the UMAP
+    kwargs
         Arguments to be passed to scanpy.pl.embedding
     
     '''
@@ -327,7 +329,6 @@ def umap_thresh(adata: anndata.AnnData, h,
                 all_markers.append(mm)
         markers = list(set(all_markers))
     
-
     for mm in markers:
         if mm.endswith("_lo") or mm.endswith("_hi"):
             m = mm[:-3]
@@ -364,25 +365,66 @@ def umap_thresh(adata: anndata.AnnData, h,
                 cmap = ListedColormap(newcolors)
 
             sc.pl.embedding(adata[mask],basis = umap_basis,color=m,cmap=cmap,vmax=max(data),vmin=0,title=f'{b} {mm}',**kwargs)
+            gc.collect()
         if to_del:
             del adata.obs[m]
+    return
+
+def umap_interrogate_level(adata: anndata.AnnData, level: str, batch_key: str=None,
+                            key_added: str='lin', umap_basis: str='X_umap',
+                            cmap: Optional[List[str]] =None,**kwargs):
+    '''
+    Plots UMAPs showing events selected by high confidence thresholding and used for training, and breaks down annotation confusion onto the UMAP.
+        
+    Parameters
+    ----------
+    adata
+        AnnData object to use for plotting
+    level
+        Level of the classifier to interrogate
+    batch_key
+        Name of batch in adata to use for UMAP, uses batch_iterator to find key
+    key_added
+        Key in the adata.obsm that contains the classification results
+    umap_basis
+        Passed to scanpy.pl.embedding as basis
+    cmap
+        Color map information used to color 
+    kwargs
+        Sent to scanpy.pl.embedding
+    '''
+    batch_masks, batches = batch_iterator(adata,batch_key)
+    adata.obs['High Confidence Thresh'] = adata.obsm[key_added][f'{level}_hc'].replace({'nan':None})
+    adata.obs['High Confidence Thresh'] = pd.Categorical(adata.obs['High Confidence Thresh'], 
+                                                         categories = sorted(set(adata.obs['High Confidence Thresh'])-set([None,'?']))+['?'])
+    adata.obs['Training Data'] = adata.obs['High Confidence Thresh'].copy()
+    adata.obs.loc[~adata.obsm[key_added][f'{level}_train'],'Training Data'] = None
+    adata.obs['Training Counts'] = adata.obsm[key_added][f'{level}_tcounts'].replace({0:np.nan})
+    
+    adata.obs['HC -> Class'] = (adata.obsm[key_added][f'{level}_hc'].astype(str) +" -> "+ adata.obsm[key_added][level+'_class'].astype(str))
+    adata.obs['HC -> Class'] = adata.obs['HC -> Class'].replace({'nan -> nan':None})
+    adata.obs['HC -> Class'] = pd.Categorical(adata.obs['HC -> Class'], categories = sorted(set(adata.obs['HC -> Class'])-set([None])))
+
+    for batch_mask, batch in zip(batch_masks, batches):
+        sc.pl.embedding(adata[batch_mask],basis = umap_basis,color=['High Confidence Thresh','Training Data','Training Counts','HC -> Class'],
+                        cmap=cmap, ncols=2, **kwargs)
+        gc.collect()
+    adata.obs = adata.obs.drop(['High Confidence Thresh','Training Data','Training Counts','HC -> Class'],axis=1)
     return
         
 def get_data(adata: anndata.AnnData,
              parameter: str,
-             preferred_data_key: Optional[str] = None,
-             return_source: bool = False,
-             force_preferred: bool = False) -> np.array:
+             preferred_data_key: Optional[str]=None,
+             return_source: bool=False,
+             force_preferred: bool=False) -> np.array:
     '''
-    Searches an AnnData object along its .var, and .obs for a specified parameter
-    To search the .obsm or .layers, define an appropriate data_key
-                ***Adapted from farberanalyze package***
+    Searches an AnnData object along its .var, .obs, .layers, and .obsm[preferred_data_key] for a specified parameter. 
         
     Parameters
     ----------
-    adata: AnnData object
+    adata
         Object to search through     
-    parameter: str
+    parameter
         string to search the AnnData object for. Append:
         "_gex" to limit checking to the .var,
         "_obs" to limit checking to the .obs,
@@ -390,17 +432,17 @@ def get_data(adata: anndata.AnnData,
         
         Note, these symbols overwrite preferred data key, and it is assumed
         that these symbols are not used elsewhere for variable names
-    preferred_data_key: str
+    preferred_data_key
         Used to point to a key in .layers or in .obsm to check in
-    return_source: bool
+    return_source
         Whether to return where the parameter was found in addition to the list of matches
-    force_preferred: bool
+    force_preferred
         Whether to raise an error if the parameter is not found in the preferred_data_key
     
     Returns
     -------
-    data: np array
-       Array of data in the anndata object whoes label matches parameter
+    data
+       Array of data in the AnnData object whoes label matches parameter
     '''
     data = None
     if "_mod_" in parameter:
@@ -441,12 +483,12 @@ def get_data(adata: anndata.AnnData,
         raise ValueError(f'Did not find {preferred_data_key} in adata.obsm or adata.layers\n'+
                          f'Or did not find {parameter} in that data')
     else:
-        assert parameter not in adata.var.index or parameter not in adata.obs.keys(), \
+        assert parameter not in adata.var_names or parameter not in adata.obs.keys(), \
         'Found {parameter} in both adata.obs and adata.var, please inspect AnnData Object and rectify.'
 
         try: # Try checking .X
             try:
-                if parameter.split("_gex")[0] in adata.var.index:
+                if parameter.split("_gex")[0] in adata.var_names:
                     data = np.array(adata.obs_vector(parameter.split("_gex")[0]))
                 else:
                     assert False
@@ -482,17 +524,23 @@ def get_data(adata: anndata.AnnData,
     else:
         raise ValueError(f'Could not find {parameter} in adata.')
 
-def list_tools(list1: list, operator: str,
+def _list_tools(list1: list, operator: str,
                list2: list=[]) -> list:
     '''
     Helper functions to combine lists. Takes in two lists, with an operator for how to join the lists
     
-    Operator can be
-        '==' followed by a value - Returns a boolean list of whether each value is equal to the value after ==
-        '+'  - Returns the sum of the lists
-        '-'  - Returns the values in list1 that are not in list2
-        '*'  - Returns the all permutations of sum of one element from list1 and one element from list2, in the order of 
-               [list1[0] + list2[0], list1[1] + list2[0], list1[2] +list2[0], ... , list1[n] + list2[m]]
+    Parameters
+    ----------
+    list1
+        A list
+    Operator
+        '==' followed by a value - Returns a boolean list of whether each value is equal to the value after == \n
+        '+'  - Returns the sum of the lists \n
+        '-'  - Returns the values in list1 that are not in list2 \n
+        '*'  - Returns the all permutations of sum of one element from list1 and one element from list2, in the order of [list1[0] + list2[0], list1[1] + list2[0], list1[2] +list2[0], ... , list1[n] + list2[m]]
+    list2
+        Another list
+    
     '''
     if '==' in operator:
         return [i == operator.split('==')[1] for i in list1]
@@ -507,23 +555,23 @@ def list_tools(list1: list, operator: str,
     else:
         return None
     
-def generate_exlcusive_features(adata_list: Union[List[str], List[anndata.AnnData]], 
-                                data_key: str = None):
+def generate_exclusive_features(adata_list: Union[List[str], List[anndata.AnnData]], 
+                                data_key: str=DATA_KEY):
     '''
     Reads in adata objects from a list of paths, or takes in a list of adata objects
     and finds the features in all objects
     
     Parameters
     ----------
-    adata_list: listlike of anndata objs or strings
+    adata_list
         List of objects in which to search for common features
-    data_key: str
+    data_key
         Optional key in the adata.obsm to use for features, will be interesected in addition to .var_names
         
     Returns
     -------
-    features: list of str
-        features that appear in all anndata objects
+    features
+        features that appear in all AnnData objects
     '''
     features = []
     for adata in adata_list:
@@ -540,3 +588,19 @@ def generate_exlcusive_features(adata_list: Union[List[str], List[anndata.AnnDat
             logg.print("No itersection attempted")
             features = features_one
     return features
+
+def _validate_names(names: List[str], reserved_strings: List[str]=['_obs','_gex','_mod_']):
+    '''
+    Checks names to ensure none of the reserved strings are contained within them
+
+    Parameters
+    ----------
+    names
+        iterable of strings to check
+    reserved_string
+        list of substrings that can't be contained in names
+    '''
+    for name in names:
+        for reserved_string in reserved_strings:
+            assert reserved_string not in name, f'invalid name {name}, contains {reserved_string}'
+    return

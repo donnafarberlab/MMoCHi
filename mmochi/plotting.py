@@ -1,3 +1,4 @@
+import gc
 import matplotlib.pyplot as plt
 import sklearn
 import sklearn.calibration
@@ -15,20 +16,20 @@ from .logger import logg # Currently unused
 def plot_tree(hierarchy, level: str,
               tree_number: int=random.randint(1,10), save: str='tree.png'):
     '''
-    Plots a singular tree from the heirarchy. This can be very useful for demonstrating how the random forest classifier functions
+    Plots a tree from the random forest at a specified level of the classifier. Note these plots are often very unwieldy.
     
     requires Graphviz which can be obtained with 
     sudo apt-get install graphviz
     
     Parameters
     ----------
-    hierarchy: Hierarchy class
+    hierarchy
         Hierarchy object which random forest is plotting on
-    level: str
+    level
         Name of the level of interest to pull the tree, must have a trained classifier attached to it
-    tree_number: int
+    tree_number
         The tree to pick. If undefined, a random tree. 
-    save: str
+    save
         The name to save the plot as a .png format. This must be done before displaying the plot as well
     '''
     clf,feature_names = hierarchy.get_clf(level, base=True)
@@ -61,18 +62,17 @@ def feature_importances(hierarchy, level: str) -> pd.DataFrame:
     
     Parameters
     ----------
-    hierarchy: Hierarchy class
+    hierarchy
         Hierarchy object containing classification levels
-    level: str
+    level
         Name of the level of interest to pull the tree, must have a trained classifier attached to it
         
     Returns
     -------
-    df: anndata object
+    df
         Dataframe of features ordered by their importance
     '''
     clf, feature_names = hierarchy.get_clf(level,base=True)
-    clf.feature_importances_
     df = pd.DataFrame(feature_names,columns=['Feature'])
     df['Importance'] = clf.feature_importances_
     df.sort_values('Importance',ascending=False,inplace=True)
@@ -86,11 +86,11 @@ def _check_levels(levels: Union[str, List[str]], hierarchy=None, include_cutoff:
     
     Parameters
     ----------
-    levels: str or list of str
+    levels
         Potential levels of the classifier to check the validity of. Levels may be "All" to specify all classification levels. 
-    hierarchy: optional, hierarchy object
+    hierarchy
         Object use to check the existence of levels, if not defined all levels are returned
-    include_cutoff: bool
+    include_cutoff
         Whether to return all valid levels or just those tagged with is_cutoff
     '''
     if levels == 'All':
@@ -115,14 +115,14 @@ def _check_pdf_open(save: str) -> Union[str, PdfPages]:
     
     Parameters
     ----------
-    save: str
+    save
         Filepath to save pdf to, if pdf filepath, will create and return PdfPages object
     
     Returns
     -------
-    pdf_page: PdfPages object
+    pdf_page
         Pdf object that plots to which plots can be saved
-    save: str
+    save
         If filepath does not end with .pdf, just returns the save string
     '''
     if not save is None and save.endswith('.pdf'):
@@ -146,11 +146,11 @@ def _save_or_show(save: Optional[Union[str,PdfPages]], show: bool, dpi: Union[in
     
     Parameters
     ----------
-    save: PdfPages object
+    save
         Object used to save plots
-    show: bool
+    show
         Whether to display plot after saving it
-    dpi: int 
+    dpi
         Resolution to use, see matplotlib.pyplot.savefig for more details
     '''
     if not save is None:
@@ -165,39 +165,39 @@ def _save_or_show(save: Optional[Union[str,PdfPages]], show: bool, dpi: Union[in
     return
 
 def _mask_adata(adata: anndata.AnnData, level: str,
-                gt_only: bool=False, untrained_only: bool=False,
+                hc_only: bool=False, holdout_only: bool=False,
                 key_added: str='lin') -> anndata.AnnData:
     '''
     Helper function to mask adata functions reliably
     
     Parameters
     ----------
-    adata: anndata object
+    adata
         Object to apply mask to and from which mask is created
-    level: str
+    level
         Level of the classifier to create mask for
-    gt_only: bool
-        Whether to only include ground truthed data points that were called as pos or neg for the specified level of classification
-    untrained_only: bool
+    hc_only
+        Whether to only include high confidence data points that were called as pos or neg for the specified level of classification
+    holdout_only
         Whether to only include data only non training data for the specified level of classification
-    key_added: str
-        Key in .obsm where one checks for ground truth and untrained data 
+    key_added
+        Key in .obsm where one checks for high confidence and untrained data 
     
     Returns 
     -------
-    adata: anndata object
-        Object with potentially gt_only and/or untrained_only masks applied
+    adata: AnnData object
+        AnnData with any applicable masks potentially applied
     '''
     mask = [True] * adata.n_obs
-    if gt_only:
-        mask = mask & (adata.obsm[key_added][level+'_gt'] != "?").values & ~(adata.obsm[key_added][level+'_gt']).isna()
-    if untrained_only:
-        mask = mask & (adata.obsm[key_added][level+'_train'] != True).values
+    if hc_only:
+        mask = mask & (adata.obsm[key_added][level+'_hc'] != "?").values & ~(adata.obsm[key_added][level+'_hc']).isna()
+    if holdout_only:
+        mask = mask & (adata.obsm[key_added][level+'_holdout']).values
     return adata[mask]
 
 def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]], 
                    hierarchy=None, key_added: str='lin', 
-                   hold_out_only: bool=True, batch_key: str=None, 
+                   holdout_only: bool=True, batch_key: str=None, 
                    save: str=None, show: bool=True,
                    title_addition: str=None, **kwargs):
     '''
@@ -205,23 +205,23 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
     
     Parameters
     ----------
-    adata: anndata object
-        Object containing ground truthing data and trained calls
-    levels: str or list of str
+    adata
+        Object containing a dataframe in the .obsm[data_key] specifiying the results of high_confidence thresholding, training, and classification
+    levels
         Level or levels of the classifier to create confusion plots for, "all" creates plots for whole hierarchy
-    hierarchy: hierarchy object
+    hierarchy
         Heirarchy object with classification level information
-    key_added: str
-        Key in .obsm, where information on whether a level had a ground truth call or was training data
-    hold_out_only: bool
+    key_added
+        Key in .obsm, where information on whether a level had a high confidence call or was training data
+    holdout_only
         Whether to only include data that was not trained on
-    batch_key: str
+    batch_key
         Column within the adata.obs that delineates batches
-    save: str
+    save
         Filepath to pdf where the plots will be saved
-    show: bool
+    show
         Whether to show the saved confusion plots
-    title_addition: str
+    title_addition
         Phrase to add to the title of the confusion plots
     **kwargs are passed to sklearn.metrics.ConfusionMatrixDisplay.from_predictions()
     '''
@@ -230,7 +230,7 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
     for batch_mask, batch in zip(batch_masks, batches):
         for level in levels:
-            fig, ax = _plot_confusion(adata[batch_mask],level,hierarchy,key_added,hold_out_only, **kwargs)
+            fig, ax = _plot_confusion(adata[batch_mask],level,hierarchy,key_added,holdout_only, **kwargs)
             if not title_addition is None:
                 ax.set_title(ax.get_title()+f'\n{title_addition}')
             if not batch_key is None:
@@ -239,50 +239,50 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
     _check_pdf_close(save)
     return
 
-def _plot_confusion(adata,level,hierarchy=None,key_added='lin',hold_out_only=True, **kwargs):
+def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only=True, **kwargs):
     '''
     Determine the performance at a single level by creating a confusion plot.
     
     Parameters
     ----------
-    adata: anndata object
-        Object containing ground truthing information and training calls for each event
-    level: str
+    adata
+        Object containing high confidence information and training calls for each event
+    level
         Level of the classifier to create a confusion plot for
-    hierarchy: hierarchy object
+    hierarchy
         Heirarchy object with classification level information
-    key_added: str
-        Key in .obsm, where information on whether a level had a ground truth call or was training data
-    hold_out_only: bool
+    key_added
+        Key in .obsm, where information on whether a level had a high confidence call or was training data
+    holdout_only
         Whether to only look at the results that were not trained on
     **kwargs are passed to sklearn.metrics.ConfusionMatrixDisplay.from_predictions()
     Returns
     -------
     fig, ax: Confusion matrix for the given level of the classifier
     '''
-    adata = _mask_adata(adata, level, gt_only=True, untrained_only=hold_out_only, key_added=key_added)
+    adata = _mask_adata(adata, level, hc_only=True, holdout_only=holdout_only, key_added=key_added)
     unseen_data = adata.obsm[key_added]
-    statuses = unseen_data[level+'_gt'].unique() 
-    (unseen_gt,unseen_cl) = zip(*[(i,j) for i,j in zip(unseen_data[level+'_gt'], unseen_data[level+'_class']) if i in statuses]) 
+    statuses = unseen_data[level+'_hc'].unique() 
+    (unseen_hc,unseen_cl) = zip(*[(i,j) for i,j in zip(unseen_data[level+'_hc'], unseen_data[level+'_class']) if i in statuses]) 
     fig, ax = plt.subplots(figsize=(4,4))
     try:
         labels = hierarchy.subsets_info(level).keys()
-        labels = [i for i in labels if i in unseen_gt]
+        labels = [i for i in labels if i in unseen_hc]
     except:
-        labels = sorted(set(unseen_gt))
+        labels = sorted(set(unseen_hc))
     try: # Fails on some versions
-        sklearn.metrics.ConfusionMatrixDisplay.from_predictions(unseen_gt,unseen_cl,colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels,**kwargs)
+        sklearn.metrics.ConfusionMatrixDisplay.from_predictions(unseen_hc,unseen_cl,colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels,**kwargs)
     except:
-        sklearn.metrics.ConfusionMatrixDisplay(sklearn.metrics.confusion_matrix(unseen_gt,unseen_cl),
+        sklearn.metrics.ConfusionMatrixDisplay(sklearn.metrics.confusion_matrix(unseen_hc,unseen_cl),
                                                colorbar=False,ax=ax,xticks_rotation='vertical',labels=labels,**kwargs)
-    p,r,f,s = sklearn.metrics.precision_recall_fscore_support(unseen_gt, unseen_cl,
+    p,r,f,s = sklearn.metrics.precision_recall_fscore_support(unseen_hc, unseen_cl,
                                                               average='weighted', zero_division=0)
     ax.set_title(f"{level}, F1 = {f:.2f}\nPrecision = {p:.2f}, Recall = {r:.2f}")
     return fig, ax
 
 def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
                     hierarchy=None, key_added: str='lin',
-                    proba_suffix: str='_proba', hold_out_only: bool=True,
+                    proba_suffix: str='_proba', holdout_only: bool=True,
                     batch_key: str=None, save: str=None,
                     show: bool=True, title_addition: str=None,
                     bins: int=10):
@@ -291,26 +291,26 @@ def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
     
     Parameters
     ----------
-    adata: anndata object
-    levels: str or list of str
+    adata
+    levels
         Level or levels of the classifier to create confidence plots for, "all" creates plots for whole hierarchy
-    hierarchy: hierarchy object
+    hierarchy
         Heirarchy object with classification level information
-    key_added: str
-        Key in .obsm, where information on ground truth and predicted probabilities exist
-    proba_suffix: str
+    key_added
+        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
+    proba_suffix
         Suffix in .obsm[key_added] the delineates probability data for the classification
-    hold_out_only: bool
+    holdout_only
         Whether to only include data that was not trained on
-    batch_key: str
+    batch_key
         Column within the adata.obs that delineates batches
-    save: str
+    save
         Filepath to pdf where the plots will be saved
-    show: bool
+    show
         Whether to show the saved confidence plots
-    title_addition: str
+    title_addition
         Phrase to add to the title of the confidence plots
-    bins: int 
+    bins
         Number of bins to split the probability [0,1] interval. See sklearn.calibration.calibration_curve for more details
     '''
     levels = _check_levels(levels,hierarchy,False)
@@ -318,7 +318,7 @@ def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
     for batch_mask, batch in zip(batch_masks, batches):
         for level in levels:
-            fig, ax = _plot_confidence(adata[batch_mask],level,key_added,proba_suffix,hold_out_only,bins=bins)
+            fig, ax = _plot_confidence(adata[batch_mask],level,key_added,proba_suffix,holdout_only,bins=bins)
             if not title_addition is None:
                 ax.set_title(ax.get_title()+f'\n{title_addition}')
             if not batch_key is None:
@@ -329,42 +329,42 @@ def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
 
 def _plot_confidence(adata: anndata.AnnData, level: str, 
                      key_added: str='lin', proba_suffix: str='_proba',
-                     hold_out_only: bool=True, bins: int=10):
+                     holdout_only: bool=True, bins: int=10):
     '''
-    Performs one vs all confidence thresholds on a specific level of the classifier. 
+    Plots one vs all confidence thresholds on a specific level of the classifier. 
     Code adapted from: https://stackoverflow.com/questions/58863673/calibration-prediction-for-multi-class-classification
     
     Parameters
     ----------
-    adata: anndata object
-        anndata object to create confidence thresholds on
-    level: str
+    adata
+        AnnData object to create confidence thresholds on
+    level
         Level of the classifier on which to create the thresholds
-    key_added: str
-        Key in .obsm, where information on ground truth and predicted probabilities exist
-    proba_suffix: str
+    key_added
+        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
+    proba_suffix
         Suffix in .obsm[key_added] the delineates probability data for the classification
-    hold_out_only: bool
+    holdout_only
         Whether to only include data that was not trained on
-    bins: int
+    bins
         Number of bins to split the probability [0,1] interval. See sklearn.calibration.calibration_curve for more details
     Returns
     -------
     fig, ax1: Confidence plot for specified level of the classifier
     '''
-    adata = _mask_adata(adata,level,gt_only=True,untrained_only=hold_out_only,key_added=key_added)
+    adata = _mask_adata(adata,level,hc_only=True,holdout_only=holdout_only,key_added=key_added)
     df = adata.uns[level+proba_suffix].copy()
-    df = df.merge(adata.obsm[key_added][level+'_gt'],how='inner',left_index=True, right_index=True)
+    df = df.merge(adata.obsm[key_added][level+'_hc'],how='inner',left_index=True, right_index=True)
     # Plot the Calibration Curve for every class
     fig = plt.figure(figsize=(10, 10))
     ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
     ax2 = plt.subplot2grid((3, 1), (2, 0))
     ax1.plot([0, 1], [0, 1], "k:", label="Perfectly calibrated")
 
-    for classification in sorted(df[level+'_gt'].unique()):
+    for classification in sorted(df[level+'_hc'].unique()):
         if classification == '?' or pd.isna(classification):
             continue
-        df[classification+'_OvA'] = (df[level+'_gt'] == classification)
+        df[classification+'_OvA'] = (df[level+'_hc'] == classification)
         fraction_of_positives, mean_predicted_value = sklearn.calibration.calibration_curve(df[classification+'_OvA'], df[classification], n_bins=bins,strategy='uniform')
         
         ax1.plot(mean_predicted_value, fraction_of_positives, "s-", label="%s" % (classification, ))
@@ -384,34 +384,36 @@ def _plot_confidence(adata: anndata.AnnData, level: str,
 
 def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]],
                             hierarchy, 
-                            reference: str='gt -> class', data_key: str='landmark_protein', 
-                            hold_out_only: bool=False, batch_key: str=None,
+                            reference: str='hc -> class', data_key: str=utils.DATA_KEY, 
+                            holdout_only: bool=False, batch_key: str=None, key_added: str='lin',
                             save: str=None, show: bool=True,
                             title_addition: str=None):
     '''Creates violin plots for the most important 25 gene, protein, or overall features for each specified level in levels
     
     Parameters
     ----------
-    adata: anndata object
-        anndata object to use for plotting
-    levels: str or list of str
+    adata
+        AnnData object to use for plotting
+    levels
         Level or levels of the classifier to plot important features of, "all" creates plots for whole hierarchy
-    hierarchy: hierarchy object
+    hierarchy
         Heirarchy object with classification level information
-    reference: str
-        Key used to group in violin plots. See scanpy.pl.stacked_violin for more details (groupby param).
-        If 'gt -> class', will also add column to obsm containing groundtruth -> level tags to the data
-    data_key: str
+    reference
+        Key in the .obs used to group the violin plots.
+        If 'hc -> class', will also add column to obsm containing high confidence -> level tags to the data
+    data_key
         Key in .obsm where feature data exists
-    hold_out_only: bool
+    holdout_only
         Whether to only include data that was not trained on
-    batch_key: str
+    batch_key
         Column within the adata.obs that delineates batches
-    save: str
+    key_added
+        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
+    save
         Filepath to pdf where the plots will be saved
-    show: bool
+    show
         Whether to show the saved feature plots
-    title_addition: str
+    title_addition
         Phrase to add to the title of the feature plots
     '''
     levels = _check_levels(levels,hierarchy,False)
@@ -419,7 +421,7 @@ def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
     for batch_mask, batch in zip(batch_masks, batches):
         for level in levels:
-            fig, axs = _plot_important_features(adata[batch_mask],level,hierarchy,reference, hold_out_only,data_key)
+            fig, axs = _plot_important_features(adata[batch_mask],level,hierarchy,reference, holdout_only,data_key)
             axs[0].set_title('GEX')
             if not data_key is None:
                 if data_key == 'protein':
@@ -435,33 +437,35 @@ def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]
     return
 
 def _plot_important_features(adata: anndata.AnnData, level: str,
-                             hierarchy, reference: str='gt -> class', hold_out_only: bool=False,
-                             data_key: str='landmark_protein'):
+                             hierarchy, reference: str='hc -> class', holdout_only: bool=False,
+                             data_key: str=utils.DATA_KEY, key_added: str='lin'):
     '''Creates violin plots for the most important 25 gene, protein, or overall features
     
     Parameters
     ----------
-    adata: anndata object
-        anndata object to use for plotting
-    level: str
+    adata
+        AnnData object to use for plotting
+    level
         Level of the classifier on which to create the plot of important features 
-    hierarchy: hierarchy object
+    hierarchy
         Heirarchy object with classification level information
-    reference: str
-        Key used to group in violin plots. See scanpy.pl.stacked_violin for more details (groupby param).
-        If 'gt -> class', will also add column to obsm containing groundtruth -> level tags to the data
-    hold_out_only: bool
+    reference
+        Key in the .obs used to group the violin plots.
+        If 'hc -> class', will also add column to obsm containing high confidence -> level tags to the data
+    holdout_only
         Whether to only include data that was not trained on
-    data_key: str
+    data_key
         Key in .obsm where feature data exists
-        
+    key_added
+        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
+    
     Returns
     -------
     fig, ax: Violin plots for the most important 25 gene, protein, or overall features
     '''
     adata = adata.copy()
-    if reference == 'gt -> class':
-        adata.obs[reference] = adata.obsm['lin'][level+'_gt'].astype(str) +" -> "+ adata.obsm['lin'][level+'_class'].astype(str)
+    if reference == 'hc -> class':
+        adata.obs[reference] = adata.obsm[key_added][level+'_hc'].astype(str) +" -> "+ adata.obsm[key_added][level+'_class'].astype(str)
     df = feature_importances(hierarchy, level)
     is_protein = df.Feature.str.split('_mod_',expand=True)[1] == data_key
     df.Feature = df.Feature.str.split('_mod_',expand=True)[0]

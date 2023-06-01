@@ -18,7 +18,7 @@ except ImportError:
 
 import os, sys
 
-class HiddenPrints:
+class _HiddenPrints:
     def __enter__(self):
         self._original_stdout = sys.stdout
         sys.stdout = open(os.devnull, 'w')
@@ -27,7 +27,7 @@ class HiddenPrints:
         sys.stdout.close()
         sys.stdout = self._original_stdout
         
-with HiddenPrints(): # Attempt to hide an import warning of cython failing, which does not seem to affect performance
+with _HiddenPrints(): # Attempt to hide an import warning of cython failing, which does not seem to affect performance
     # https://github.com/SheffieldML/GPy/issues/902
     try:
         from skfda.preprocessing.registration import landmark_registration_warping, invert_warping
@@ -39,39 +39,37 @@ with HiddenPrints(): # Attempt to hide an import warning of cython failing, whic
         except ImportError:
             pass
             # No longer required to import the package, but is needed to run core functions. Will need to add checking for that
-            # raise ImportError('Please install skfda using pip install scikit-fda==0.5')
     
-def landmark_register_adts(adata: anndata.AnnData, batch_key: str='donor',
+def landmark_register_adts(adata: anndata.AnnData, batch_key: str=utils.BATCH_KEY,
                            data_key: str='protein', key_added: str='landmark_protein',
-                           show: Union[bool, int]=False,single_peaks:List[str]=[],
+                           show: Union[bool, int]=False, single_peaks:List[str]=[],
                            marker_bandwidths: dict={}, peak_overrides: Union[dict,str]={},**kwargs) -> anndata.AnnData:
-    ''' Batch correction for ADT expression
+    ''' Batch correction for expression of all ADTs. 
     
     Performs negative and positive peak alignment on histograms of ADT expression. Currently expects log or arcsin normalized ADTs (e.g. log2(CP1k)). 
-    For now, this method appears to require scikit-fda==0.6. 
-    This was developed in parallel with ADTnorm, a similar function expecting arcsin transformed ADTs https://doi.org/10.1101/2022.04.29.489989 
+    This was developed in parallel with ADTnorm, a similar function which uses arcsin transformed ADTs https://doi.org/10.1101/2022.04.29.489989 
     
     Parameters
     ---
-    adata: AnnData
+    adata
         object with [batch_key] in .obs, [data_key] log or arcsin normalized data in .obsm to be batch corrected
-    batch_key: str
+    batch_key
         column in the .obs of the adata, corresponding to batch information
-    data_key: str
+    data_key
         key of the dataframe in the .obsm of the adata, corresponding to the ADT expression information
-    key_added: str
+    key_added
         key of the dataframe in the .obsm of the adata to insert landmark registered ADT expression
-    show: bool or int
-        Whether to show plotted intermediates to better reveal peak detection. Note, this disables parallel processing. Integers (up to 3) correspond to 
-        increased verbosity level.
-    single_peaks: list of str
-        Columns in adata.obsm[data_key] corresponding to ADTs to only align a single peak of. If multiple peaks are found, the maximum on the histogram will be 
-        used. 
-    marker_bandwidths: dict
+    show
+        Whether to show plotted intermediates to better reveal peak detection. Note, this disables parallel processing. 
+        Integers (up to 3) correspond to increased verbosity level.
+    single_peaks
+        Columns in adata.obsm[data_key] corresponding to ADTs to only align a single peak of. If multiple peaks are found, the maximum 
+        on the histogram will be used. 
+    marker_bandwidths
         In the format {'marker_1':0.5}, to override bandwidths used for individual markers
-    peak_overrides: dict of dicts or str
-        In the format { 'batch_1':{'marker_1':[0.1,0.5]} }, to override peak detection for individual markers in individual batches. To force a positive peak, 
-        pass [None,float] as the override. To force a negative peak, you can pass simply [float]. 
+    peak_overrides
+        In the format { 'batch_1':{'marker_1':[0.1,0.5]} }, to override peak detection for individual markers in individual batches. 
+        To force a positive peak, pass [None,float] as the override. To force a negative peak, you can pass simply [float]. 
         Can also be passed as a str, corresponding to the file path of a JSON saved with this same format.
     **kwargs 
         Other key word arguments are passed to _detect_landmarks
@@ -121,22 +119,26 @@ def landmark_register_adts(adata: anndata.AnnData, batch_key: str='donor',
     adata.obsm[key_added] = adata.obsm[key_added].astype(float)
     return adata
 
-def update_peak_overrides(batch: str, marker: str, update_lower: Optional[Union[float,bool]], update_upper: Optional[Union[float,bool]], 
-                          peak_overrides: Union[dict,str]={}, current_peaks: dict=None):
+def update_peak_overrides(batch: str, marker: str,
+                          update_lower: Optional[Union[float,bool]], 
+                          update_upper: Optional[Union[float,bool]],
+                          peak_overrides: Union[dict,str]={}, current_peaks: dict=None) -> dict:
     ''' 
     Update peak overrides object for a single batch, marker. Can load it from a JSON if provided a string. 
     To use update_upper and update_lower = False, must provide current_peaks dict (often found in adata.uns)
     
     Parameters
     ---
-    batch: str
+    batch
         The ID corresponding with the batch of interest
-    marker: str
+    marker
         The name of the marker to edit overrides on
-    update_lower, update_upper: optional, floats or bools
-        If update_lower or update_upper is False, keep current value for lower or upper, respectively. Otherwise, if they are floats, update to that value.
-        If update_lower is None, then put None as the lower peak, forcing a single positive. If update_upper is None, then put lower as the only item in the 
-        override, forcing a single negative.
+    update_lower
+    update_upper
+        If update_lower or update_upper is False, keep current value for lower or upper, respectively. 
+        Otherwise, if they are floats, update to that value.
+        If update_lower is None, then put None as the lower peak, forcing a single positive. 
+        If update_upper is None, then put lower as the only item in the override, forcing a single negative.
         
     Returns
     ---
@@ -165,36 +167,40 @@ def update_peak_overrides(batch: str, marker: str, update_lower: Optional[Union[
     
     
                                
-def update_landmark_register(adata: anndata.AnnData, batch: str, marker: str, override: Union[List[float],dict,str]={}, 
-                             batch_key: str='donor',data_key: str='protein', key_added: str='landmark_protein', show: Union[bool, int]=False,
-                             single_peaks:Union[bool,List[str]]=[], bandwidth: Union[float,dict]=0.2, **kwargs)-> anndata.AnnData:
+def update_landmark_register(adata: anndata.AnnData, batch: str,
+                             marker: str, override: Union[List[float],dict,str]={}, 
+                             batch_key: str=utils.BATCH_KEY,
+                             data_key: str='protein', key_added: str='landmark_protein', 
+                             show: Union[bool, int]=False,
+                             single_peaks: Union[bool,List[str]]=[],
+                             bandwidth: Union[float,dict]=0.2, **kwargs)-> anndata.AnnData:
     '''  Landmark registration batch correction for ADT expression for a sigle marker on a single batch. landmark_register_adts() must be run
     before this. See landmark_register_adts for more details.
     
     Parameters
     ---
-    adata: AnnData
+    adata
         object with [batch_key] in .obs, [data_key] log or arcsin normalized data in .obsm to be batch corrected
-    batch: str
+    batch
         Corresponding to batch information
-    marker: str
+    marker
         Corresponding to the marker of interest
-    override: listlike(float), dict, or str
-        Can be a listlike of two floats corresponding to the positive and negative peaks, or a dict with an item in { batch:{marker:[0.1,0.5]} }. To force a 
-        positive peak, pass [None,float] as the override. To force a negative peak, you can pass simply [float]. 
+    override
+        Can be a listlike of two floats corresponding to the positive and negative peaks, or a dict with an item in { batch:{marker:[0.1,0.5]} }. 
+        To force a positive peak, pass [None,float] as the override. To force a negative peak, you can pass simply [float]. 
         Can also be passed as a str, corresponding to the file path of a JSON saved with this dict format.
-    batch_key: str
+    batch_key
         column in the .obs of the adata, corresponding to batch information
-    data_key: str
+    data_key
         key of the dataframe in the .obsm of the adata, corresponding to the ADT expression information
-    key_added: str
+    key_added
         key of the dataframe in the .obsm of the adata to insert landmark registered ADT expression
-    show: bool or int
-        Whether to show plotted intermediates to better reveal peak detection. Note, this disables parallel processing. Integers (up to 3) correspond to 
-        increased verbosity level.
-    single_peaks: bool or list of str
+    show
+        Whether to show plotted intermediates to better reveal peak detection. Note, this disables parallel processing. 
+        Integers (up to 3) correspond to increased verbosity level.
+    single_peaks
         Columns in adata.obsm[data_key] corresponding to ADTs to only align a single peak of. Can also just be True or False.
-    marker_bandwidths: float or dict
+    marker_bandwidths
         In the format {marker:0.5}, to override bandwidths used for individual markers, or just a bandwidth number to use that.
     **kwargs 
         Other key word arguments are passed to _detect_landmarks
@@ -235,29 +241,29 @@ def update_landmark_register(adata: anndata.AnnData, batch: str, marker: str, ov
 
 
 def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarray, bool, Union[float, int], List[Union[float,int]]],
-                           base_barcodes: List[str],show: bool=False,
+                           base_barcodes: List[str], show: bool=False,
                            **kwargs) -> Tuple[np.array, np.array, np.array]:
     '''
     Aligns data postive and negative peaks to specified locations
     
     Performs negative and positive peak alignment for one batch of ADT expression. Currently expects log or arcsin normalized ADTs (e.g. log2(CP1k)). 
-    For now, this method appears to require scikit-fda==0.6. 
     This was developed in parallel with ADTnorm, a similar function expecting arcsin transformed ADTs https://doi.org/10.1101/2022.04.29.489989 
     
     Parameters
     ----------
-    array_single_peak_bandwidth_override: tuple of 
-        input_array: numpy array
-            Array of expression values for one batch
-        single_peak: bool
-            If true only look for one peak to correct on
-        bandwidths: float
-            Mernel density estimation factor to be used in gaussian KDE
-        overrides: list of floats
-            Maual peaks location to be used for this batch
-    base_barcodes: list of str
+    array_single_peak_bandwidth_override
+        Tuple in the order of:
+            input_array: numpy array
+                Array of expression values for one batch
+            single_peak: bool
+                If true only look for one peak to correct on
+            bandwidths: float
+                Mernel density estimation factor to be used in gaussian KDE
+            overrides: list of floats
+                Maual peaks location to be used for this batch
+    base_barcodes
         DNA barcodes, index aligned to input_array
-    show: bool
+    show
         Whether to show plotted intermediates to better reveal peak detection. Integers (up to 3) correspond to increased verbosity level.
     **kwargs
         Other keyword arguments are passed to _detect_landmarks
@@ -325,7 +331,7 @@ def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarra
     return (location, peaks, np.array(df[0]))
 
 def _detect_landmarks(y: np.array, single_peak: bool=False,
-                      landmark_threshold: float=0.0025, peak_min_height: float = .002,
+                      landmark_threshold: float=0.0025, peak_min_height: float=.002,
                       show: bool=False, min_dist: Union[int,float]=30,
                       min_width: Union[int,float]=20, min_secondary_landmark: Union[int,float]=200, 
                       info: str=None, primary_prominence: Union[int,float]=0.003, 
@@ -337,7 +343,7 @@ def _detect_landmarks(y: np.array, single_peak: bool=False,
     
     Parameters
     ----------
-    y: np.arr 
+    y
         Binnned array of values in which to find one or more data peaks 
     single_peak boolean:
         If true only try to detect a single peak in the data
@@ -345,17 +351,17 @@ def _detect_landmarks(y: np.array, single_peak: bool=False,
         Maximum derivative where a peak will be counted as a peak
     peak_min_height number:
         Minimum height that a peak must be in order to be detected
-    show: bool
+    show
         Whether to show plotted data to better reveal peak detection. Integers (up to 3) correspond to increased verbosity level.
-    min_dist:
+    min_dist
         Smallest permitted horizontal distance between two peaks
-    min_width:
+    min_width
         Smallest permitted width of a peak for it to be detected
-    min_secondary_landmark:
+    min_secondary_landmark
         Smallest permitted value where postive peak can be placed (most used as a suggestion)
-    primary_prominence:
+    primary_prominence
         Required minimum prominence of peaks. More info at scipy.signal.find_peaks
-    secondary_prominence:
+    secondary_prominence
         A lower minimum prominence to try to find peaks for secondary landmarking. More info at scipy.signal.find_peaks
         
     Returns
@@ -453,8 +459,8 @@ def _detect_landmarks(y: np.array, single_peak: bool=False,
     return landmarks
 
 def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFrame, list, tuple],
-                          batch_key: str='donor', data_key: List[str]=['protein','landmark_protein'],
-                          data_key_colors: Union[List[str],List[Tuple[float]]]=['b','r'],
+                          batch_key: str=utils.BATCH_KEY, data_key: List[str]=['protein','landmark_protein'],
+                          data_key_colors: Union[List[str], List[Tuple[float]]]=['b','r'],
                           aspect: Union[float,int]=3, height: Union[float,int]=.85, 
                           save_fig: str=None, subsample: Union[float, int]=1,
                           bw_adjust: Union[float,int]=0):
@@ -465,25 +471,25 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
     
     Parameters
     ----------
-    adata: anndata.Anndata
-        Dataframe to use. Containing [batch] labels in obs, [data_key] in obsm, and contains all items in [markers_list] to plot found using mmc.utils.get_data
-    marker_list: pandas.Dataframe or any list-like, if not list-like will be converted to a list
+    adata
+        AnnData containing [batch] labels in obs, [data_key] in obsm, and contains all items in [markers_list] to plot found using mmc.utils.get_data
+    marker_list
         List of markers to be plotted for each [batch], uses mmc.utils.get_data to search for marker info
-    batch_key: str
+    batch_key
         Chosen labels to compare. Each item in batch will be its own row in the stacked plot
-    data_key: list of str
+    data_key
         List of labels to on which to compare [batch]es. Uses mmc.utils.get_data to find labels in data_key in [adata]
-    data_key_colors: list of colors
+    data_key_colors
         Colors to use for text labels for [data_key]s
-    aspect: Scalar
+    aspect
         Aspect value passed to seaborne.FacetGrid function
-    height: Scalar
+    height
         Height a the plots. Passed to seaborne.FacetGrid and matplotlib.plt.text functions
-    save_fig: str
+    save_fig
         Filepath to save figure to. If none, will not save figure
-    subsample: float
+    subsample
         Fraction of adata data to use for plotting. If less than 1 that fraction will be chosen randomly
-    bw_adjust: Number
+    bw_adjust
         Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborne.kdeplot for more details
         
     Returns
@@ -542,27 +548,29 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
     plt.show()
     return
 
-def density_plot(adata: anndata.AnnData, marker: str, batch: str, batch_key: str, data_key: str, 
-                 bw_adjust: float=0,step: float=0.1):
+def density_plot(adata: anndata.AnnData, marker: str,
+                 batch: str, batch_key: str=utils.BATCH_KEY,
+                 data_key: str=utils.DATA_KEY,
+                 bw_adjust: float=0, step: float=0.1):
     '''
     Creates density plot of a single batch for a single marker for a given data_key. Marks location of landmark(s) with small black line(s) on x axis.
     
     Parameters
     ----------
-    adata: AnnData object
+    adata
        AnnData to use with a batch in batch_key in .obs, and data in .obsm[data_key].
-    marker: str
+    marker
         Marker to be plotted. Uses mmc.utils.get_data to find the marker.
-    batch_key: str
+    batch_key
         Category in .obs where batch is.
-    batch: str
+    batch
         Label in .obs[batch_key] to be plotted.
-    data_key: str
+    data_key
         Label in .obsm to be plotted. 
-    bw_adjust: float
+    bw_adjust
         Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborne.kdeplot for more details. 
         Use 0 to plot a histogram.
-    step: float
+    step
         Size of x ticks on histogram.    
     '''
     data, markname_full = utils.get_data(adata,marker,data_key,return_source=True)
@@ -580,29 +588,33 @@ def density_plot(adata: anndata.AnnData, marker: str, batch: str, batch_key: str
     return
 
 
-def density_plot_total(adata: anndata.AnnData, marker: str, batch: str, batch_key: str,
-                       data_key: str, bw_adjust: float=0, step: float=0.1, weights: Optional[float]=None):
+def density_plot_total(adata: anndata.AnnData, marker: str,
+                       batch: str, batch_key: str=utils.BATCH_KEY,
+                       data_key: str=utils.DATA_KEY, 
+                       bw_adjust: float=0, step: float=0.1,
+                       weights: Optional[float]=None):
     '''
+    Plots density of a single makrer on a single batch in front of the density of this marker for the whole dataset.
     Creates density plot of a single batch for a single marker for a given data_key. Marks location of landmark(s) with small black line(s) on x axis.
     Plots this in front of the density plot for the entire dataset. This is helpful when adding a single batch to a larger, prelandmarked dataset. 
     
     Parameters
     ----------
-    adata: AnnData object
+    adata
        AnnData to use with a batch in batch_key in .obs, and data in .obsm[data_key].
-    marker: str
+    marker
         Marker to be plotted. Uses mmc.utils.get_data to find the marker.
-    batch_key: str
+    batch_key
         Category in .obs where batch is.
-    batch: str
+    batch
         Label in .obs[batch_key] to be plotted.
-    data_key: str
+    data_key
         Label in .obsm to be plotted. 
-    bw_adjust: float
+    bw_adjust
         Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborne.kdeplot for more details.
-    step: float
+    step
         Size of x ticks on histogram.    
-    weight: optional, float
+    weight
         See seaborn.histplot documentation, the weights for the overall dataset to manually normalize the histogram
         heights of the batch and the total dataset. Passing None calculates n_batch_events/n_total_events
     '''
@@ -629,15 +641,15 @@ def density_plot_total(adata: anndata.AnnData, marker: str, batch: str, batch_ke
     plt.show()
     return
 
-def save_peak_overrides(path: str,peak_overrides: dict):
+def save_peak_overrides(path: str, peak_overrides: dict):
     '''
-    Saves peak overrides to a JSON file for easy loading
+    Saves peak overrides to a JSON file for easy loading.
     
     Parameters
-    ---
-    path: str
+    ----------
+    path
         Location to save to, including the file name and .json
-    peak_overrides: dict
+    peak_overrides
         Dictionary of peak overrides to save
     '''
     import json
@@ -649,17 +661,17 @@ def save_peak_overrides(path: str,peak_overrides: dict):
         json.dump(peak_overrides, fp, skipkeys=True, sort_keys=True, indent=4)#, cls=NumpyEncoder)
     return
 
-def load_peak_overrides(path):
+def load_peak_overrides(path: str):
     '''
-    Loads peak overrides from a JSON file
+    Loads peak overrides from a JSON file.
     
     Parameters
-    ---
-    path: str
+    ----------
+    path
         Location to load file from, including the file name and .json
     
     Returns
-    ---
+    -------
     Dictionary of peak overrides from the JSON file.
     '''    
     import json
