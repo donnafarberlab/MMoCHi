@@ -84,6 +84,12 @@ cd mmochi
 conda activate mmochi
 pip install .
 ```
+Optional dependencies for landmark registration, compiling documentation, or running pytest can be installed using one of the following:
+```
+pip install .[landmarking]
+pip install .[docs]
+pip install .[pytest]
+```
 
 ### Testing your installation
 This will help verify a successful install of MMoCHi. While the pytest covers ~90% of the code, it still does not capture many use-cases. Thus, while it will catch major issues in dependencies, it may not detect issues with functions requiring user interaction. Please also run through the tutorials to verify your environment is correct.
