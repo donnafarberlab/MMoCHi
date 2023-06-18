@@ -21,6 +21,7 @@ def run_threshold(markname: str, adata: anndata.AnnData,
     markname
         Name of the marker
     adata
+        AnnData object containing normalized (and possibly batch corrected) events for thresholding
     data_key
         Name of the key in .obsm[] to look for when searching for markname
     thresh
@@ -76,7 +77,7 @@ def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
     markname_full
         Name of the marker, to be used in the title of the graph
     title_addition
-        Other information you would like to include in the title after the markername
+        Other information you would like to include in the title after the marker name
         
     Returns
     -------
@@ -115,8 +116,8 @@ def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
 
 def _interactive_threshold(thresh: Tuple[float, float]) -> Tuple[float, float]:
     '''
-    Given a threshold suggestion (thresh), attempts to ask the user for thresholds using the input function
-    invalid inputs (such as letters or no input) default the threshold to the suggested threshold.
+    Given a threshold suggestion (thresh), attempts to ask the user for thresholds using the input function.
+    Invalid inputs (such as letters or no input) default the threshold to the suggested threshold.
     
     Parameters
     ----------
@@ -199,12 +200,12 @@ def threshold(markname: str, adata: anndata.AnnData,
     negative (below the lower threshold), and "?" for undefined (between the two thresholds).
     
     Runs utils.get_data() to identify the data.
-    Automatically calculates threshold, and has options for display of these thresholds on a histogram.
+    Automatically calculates threshold and has options for display of these thresholds on a histogram.
     
     Parameters
     ----------
     markname
-        Name of the marker being used. Markers can also have "_lo" or "_hi" appeneded to them to specify
+        Name of the marker being used. Markers can also have "_lo" or "_hi" appended to them to specify
         multiple thresholds on the same marker at the same level.
     adata
         AnnData object for creating thresholds, containing expression in the .X and/or the .obsm[data_key] 
@@ -221,7 +222,7 @@ def threshold(markname: str, adata: anndata.AnnData,
     plot
         Whether to display plots from _plot_threshold
     title_addition
-        Other information you would like to include in the title after the markername
+        Other information you would like to include in the title after the marker name
     interactive
         Whether to prompt the user to enter thresholds (uses defaults if invalid entry)
     fancy
@@ -264,7 +265,7 @@ def _calc_threshold(markname: str, adata: anndata.AnnData,
     '''
         Internal function to handle threshold making.
         
-        Gets the data using utils.get_data, determines if 0's should be kept in the data, then creates a gaussian mixture model of either 1 or 2 compoenents. 
+        Gets the data using utils.get_data, determines if 0's should be kept in the data, then creates a gaussian mixture model of either 1 or 2 components. 
         The fit of these models are compared and if only use the 2 component mix if it fits significantly better than the 1 component model. Calculate means, 
         weights, and standard deviations of the gaussians, then calculates thresholds as the minimum and maximum of the 1st peak + 2-4 std, 
         the 2nd peak + 2-4 std (if there're two peaks), and .05 (if there are no peaks)

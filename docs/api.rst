@@ -5,25 +5,45 @@ Import MMoCHi as:
 
 ```import mmochi as mmc```
 
+For usage examples, see the :ref:`tutorials`.
+
 
 Hierarchy Generation
 --------------------
 
-Designing your hierarchy is the first step to classification. The Hierarchy class contains many methods used for building the hierarchy and defining high confidence thresholds. For usage examples, see the :ref:`tutorials`.
+Designing your hierarchy is the first step to classification. The Hierarchy class contains many methods used for building the hierarchy and defining high-confidence thresholds. 
 
 .. module:: mmochi.hierarchy
 
 .. autosummary::
    :toctree: functions/
-
+   :nosignatures:
+   
    Hierarchy
-   Subset
    Classification
+   Subset
    hc_defs
+   ...
+   
+   
+Thresholding
+------------
+
+High-confidence thresholding is performed primarily through methods in the `mmc.Hierarchy` object, but these are the functions that perform thresholding under the hood. 
+
+.. module:: mmochi.thresholding
+
+.. autosummary::
+   :toctree: functions/
+
+   threshold
+   run_threshold
    ...
 
 Classification 
 --------------
+
+Once the Hierarchy is created and high-confidence thresholds are drawn, you are ready to classify. The `mmc.classify` function runs `mmc.classifier_setup` and `mmc.hc_threshold` internally, but you have the option to run these separately for testing.
 
 .. module:: mmochi.classifier
 
@@ -36,20 +56,38 @@ Classification
    terminal_names
    ...
 
-Thresholding
-------------
+Plotting 
+--------
 
-.. module:: mmochi.thresholding
+Once you have run your classification, you may be interested in plotting some metrics of its performance or evaluating feature importances.
+
+.. module:: mmochi.plotting
 
 .. autosummary::
    :toctree: functions/
 
-   threshold
-   run_threshold
+   plot_confusion
+   plot_confidence
+   feature_importances
+   plot_important_features
+   plot_tree
+   ...
+
+There are also a few plotting functions we have created for interrogating high-confidence thresholds and classifier performance using UMAPs: 
+
+.. currentmodule:: mmochi.utils
+
+.. autosummary::
+   :toctree: functions/
+
+   umap_thresh
+   umap_interrogate_level
    ...
 
 Landmark Resgistration 
 ----------------------
+
+Prior to classification, you may be interested in performing batch correction on ADT expression. This module contains the tools necessary to perform and evaluate batch correction by landmark registration.
 
 .. module:: mmochi.landmarking
 
@@ -66,38 +104,10 @@ Landmark Resgistration
    load_peak_overrides
    ...
 
-Plotting 
---------
-
-Once you have run your classification, you may be interested in plotting some metrics of its performance, or evaluating feature importances. For that, you can use these plotting functions here. For usage examples, see the :ref:`tutorials`.
-
-.. module:: mmochi.plotting
-
-.. autosummary::
-   :toctree: functions/
-
-   plot_confusion
-   plot_confidence
-   feature_importances
-   plot_important_features
-   plot_tree
-   ...
-
-There are also a few helper functions we have created for interrogating high confidence thresholds and classifier performance using UMAPs: 
-
-.. module:: mmochi.utils
-   :noindex:
-
-.. autosummary::
-   :toctree: functions/
-
-   umap_thresh
-   umap_interrogate_level
-   ...
-
-
 Helper functions
 ----------------
+
+We have also developed a suite of helper functions which may be useful for running MMoCHi or preparing your data. 
 
 .. module:: mmochi.utils
 
@@ -114,8 +124,7 @@ Helper functions
    batch_iterator
    ...
 
-.. module:: mmochi.classifier
-   :noindex:
+.. currentmodule:: mmochi.classifier
 
 .. autosummary::
    :toctree: functions/
@@ -125,6 +134,8 @@ Helper functions
 
 Logging
 ----------------
+
+MMoCHi has built-in logs which can be helpful for debugging or reproducibility.
 
 .. module:: mmochi.logger
 
@@ -136,8 +147,4 @@ Logging
 
 .. tocTree::
    :hidden:
-   :maxdepth: 2
    :titlesonly:
-
-
-

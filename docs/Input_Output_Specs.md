@@ -4,20 +4,20 @@
 <img align="left" src="https://raw.githubusercontent.com/scverse/anndata/main/docs/_static/img/anndata_schema.svg" width="250" style="border:4px solid black;background-color:white">
 
 ### General input structure
-MMoCHi expects an `anndata.AnnData` object ([anndata](https://anndata.readthedocs.io/en/latest/)) loaded into memory, and requires sufficient RAM available to duplicate this object in memory. Currently for multimodal CITE-Seq classification, MMoCHi expects the `.X` of the `AnnData` object to contain gene expression (GEX) data and the `.obsm[data_key]` to contain a `pandas.DataFrame` ([pandas](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html)) with protein expression (ADT) data. This expression data should be library-size normalized and batch corrected, as necessary.
+MMoCHi expects an `anndata.AnnData` object ([AnnData](https://anndata.readthedocs.io/en/latest/)), and requires ~3-5 times the amount of RAM needed to store this object in memory to run. Currently for multimodal CITE-Seq classification, MMoCHi expects the `.X` of the `AnnData` object to contain gene expression (GEX) data and the `.obsm[data_key]` to contain a `pandas.DataFrame` ([pandas](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html)) with protein expression (ADT) data. This expression data should be library-size normalized and batch corrected, as necessary.
 
-Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` objects into the right format, although you should check to make sure the object is correctly formatted and all data are correctly transformed. 
+Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` objects into the right format, although you should check to make sure the object is correctly formatted and data are correctly transformed. 
 
-## Detailed Specification of Inputs
+## Expected Inputs
 
 ### `.X`
-- In the `.X` of the `anndata`, MMoCHi classification requires library-size normalized feature expression
+- In the `.X` of the `AnnData`, MMoCHi classification requires library-size normalized feature expression
     - Most often this would be log-normalized gene expression stored in a `scipy.sparse_matrix` but could also be stored in a `numpy.array`
 
 ### `.obsm`
 - Expression of the second modality can be stored in the `.obsm[data_key]` as a `pandas.DataFrame` ([pandas](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html)).
     - Most often this would be log-normalized protein expression. Protein expression can also be batch-corrected, for example by using `mmc.landmark_register()`
-    - The data frame should have column named by feature and indexed identically to `anndata.AnnData.obs_names`. Column names must be unique and encoded as strings.
+    - The DataFrame should have column names corresponding to features and be indexed identically to `anndata.AnnData.obs_names`. Both must be unique and encoded as strings.
     - For convenience, the default `data_key` for most functions can be edited by setting `mmc.DATA_KEY='new_data_key'`
 
 ### `.obs`
@@ -29,11 +29,11 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
     - This column name is specified by the `batch_key` argument across all MMoCHi functions. Potentially useful batch keys may be donor_id, sequencing_technology, or sample_type.
     - For convenience, the default `batch_key` for most functions can be edited by setting `mmc.BATCH_KEY='new_batch_key'`
     
-- During high confidence thresholding and classification, MMoCHi has built in opportunities to compare classifications to a reference column in the `.obs`. 
+- During high-confidence thresholding and classification, MMoCHi has built in opportunities to compare classifications to a reference column in the `.obs`. 
     - This is entirely optional but can be useful for troubleshooting. Often good reference columns are cursory manual annotations, clustering, or sample metadata.
     
-- In the hierarchy the user can specify cell metadata (such as tissue-of-origin) that can be used to select events for high confidence populations. 
-    - This metadata should be included in the `.obs` and be encoded as strings. An example can be found in the [Hierarchy Design tutorial](Hierarchy.ipynb).
+- In the hierarchy the user can specify cell metadata (such as tissue-of-origin) that can be used to select events for high-confidence populations. 
+    - This metadata should be included in the `.obs` and be encoded as strings. An example can be found in the [Hierarchy Design tutorial](Hierarchy_Design.ipynb).
     
 ### `.var`
 - The index of the `.var` (also stored in `anndata.AnnData.var_names`) should correspond to feature_names. These must be unique and encoded as strings.
@@ -41,29 +41,29 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
     - For `.var_names` that are encoded as integers, this can be changed using `adata.var_names = adata.var_names.astype(str)`
 
 - If you wish to filter out specific features from the `.X` before training the classifier, a boolean mask can be included as a column in the `.var`.
-    - Consider filtering out non-protein coding genes (if their expression is noisy and not useful for cell-type discrimination) or known sequencing artifacts).
+    - Consider filtering out non-protein coding genes (if their expression is noisy and not useful for cell-type discrimination) or known sequencing artifacts.
     
 - There is experimental support for expression of multiple modalities to be stored in the `.X`. This may not run reliably. 
-    - When this is the case, a column in the `.var`, specifying modality (e.g. `features_type`), must be included.
+    - For this, a column in the `.var`, specifying modality (e.g. `features_type`), must be included.
  
 ### `mmc.Hierarchy`
- - A `mmc.Hierarchy` object must be created as detailed in the docs, [Integrated Classification tutorial](Integrated_Classification.ipynb), and [Hierarchy Design tutorial](Hierarchy.ipynb).
-     - The structure and high confidence markers used in the hierarchy can be checked using its `.display()` method.
+ - A `mmc.Hierarchy` object must be created as detailed in the docs, [Integrated Classification tutorial](Integrated_Classification.ipynb), and [Hierarchy Design tutorial](Hierarchy_Design.ipynb).
+     - The structure and high-confidence markers used in the hierarchy can be checked using its `.display()` method.
  
-## Specification of Outputs
+## Outputs
 
 ### `.obsm['lin']` (after running `mmc.classify()`)
 
 - Named `lin` by default (for lineage), this is a `pandas.DataFrame`, indexed by `anndata.AnnData.obs_names`. 
-    - At each level of the hierarchy, columns will be added to this data frame containing important results and information.
+    - At each level of the hierarchy, columns will be added to this DataFrame containing important results and information.
     - After training a classifier, the `.obsm['lin']` will include columns for: 
-        - `{level}_hc`: String, High-confidence threshold identity (either a cell type, '?' (for events not identified as a high confidence cell type), or 'nan' for cells not part of the parent subset)
+        - `{level}_hc`: String, High-confidence threshold identity (either a cell type, '?' (for events not identified as a high-confidence cell type), or 'nan' for cells not part of the parent subset)
         - `{level}_holdout`: Bool, True for events that are *explicitly* held out from training (i.e. not used for random forest training, nor training data selection)
         - `{level}_train`: Bool, True for events that are used for random forest training
-        - `{level}_tcounts`: Integer, The number of times an event was duplicated within the training dataset.
+        - `{level}_traincounts`: Integer, The number of times an event was duplicated within the training dataset.
     - After using the classifier for prediction, the `.obsm['lin']` will include columns for: 
         - `{level}_class`: String, The classification at the given level, or 'nan' for cells not part of the parent subset.
-        - `{level}_proba`: Float, The classifier's confidence of the predicted subset being correct for a given event.
+        - `{level}_probability`: Float, The classifier's confidence of the predicted subset being correct for a given event.
     - Note, cutoff nodes (e.g. when using `h.add_classification(is_cutoff=True)`) in the hierarchy will only produce `{level}_hc` and `{level}_class` columns when run.
     - Events that are identified as 'noise' or excluded during subsampling during training data selection will be `False` for both `{level}_holdout` and `{level}_train`
 
@@ -71,21 +71,23 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
 
 - The `classification` column is the lowest-level annotation of a cell type. If two annotations are put in parallel on the hierarchy, it will correspond to the annotation specified last.
     
-- The `conf` column corresponds to the Random Forest's confidence level (scaled 0-1) at the lowest-level of annotation. 
-    - This will be higher for cells that are well-represented by high confidence events and lower for cells that are less well-represented and may be useful for identifying problem-areas in classification
-    - This should not be used for direct annotation of cells as `high-confidence` as it does not take into account confidence scores elsewhere on the hierarchy. More success for 'high-confidence' annotations may come from using the `probability_cutoff` parameter in `mmc.classify()`
+- The `certainty` column corresponds to the Random Forest's confidence level (scaled 0-1) for the classified subset identity at the most specific level of annotation. 
+    - Without calibration enabled, this corresponds to the percent of the forest in agreement. With calibration, this should more-closely match the certainty of the given cell call.
+    - This will be higher for cells that are well-represented by high-confidence events and lower for cells that are less well-represented and may be useful for identifying problem-areas in classification
+    - This should not be as a direct readout of classification certainty, as it does not take into account certainty of intermediate calls in the hierarchy. The `probability_cutoff` parameter in `mmc.classify()` may provide more ability to select for cells classified with high certainty. 
 
-### `.uns[{level}_proba]` (after running `mmc.classify(proba_suffix='_proba')`)
+### `.uns[{level}_probabilities]` (after running `mmc.classify(probabilities_suffix='_probabilites')`)
 
-- MMoCHi will optionally add `pandas.DataFrame` objects to the unstructured for each classification level, corresponding to the predicted probabilities for all classes in the multiclass at each level. 
-    - This can be very useful for troubleshooting classification results or using MMoCHi to 'score' cell types based on an identity.
+- MMoCHi will optionally add `pandas.DataFrame` objects encoding the predicted probabilities for all classes in the multiclass at each level to the `.uns`. 
+    - This can be very useful for troubleshooting classification results or using MMoCHi to generate cell type scores.
 
 ### `mmc.Hierarchy` (after running `mmc.classify()`)
 
  - As before, the `mmc.Hierarchy` object will contain information about each classification level and its child nodes.
- - While running `mmc.classify()`, the features used, random forest classifier, and any calibration will be saved into the hierarchy object. These can be accessed to identify important features for classification, as demonstrated in the [Feature importance tutorial](Feature_Importance.ipynb).
- - The hierarchy object produced by `mmc.classify()` has all items needed to apply this classification on held-out data or other datasets, by running `mmc.classify(retrain=False)`, as in the [Integrated Classification tutorial](Integrated_Classification.ipynb). Projecting the classification requires that expression information for all features used in the original classification are available in the held-out dataset.
-    - One should also be cautious to ensure that cell types present in the training dataset are representative of cell types present in the held-out data. If applying classifications to equivalent CITE-Seq data, we may recommend rerunning `mmc.classify(retrain=True)` to train new classifiers at each level of the hierarchy using high confidence thresholding on this new dataset. 
+ - While running `mmc.classify()`, the features used, random forest classifier, and any calibration will be saved into the hierarchy object. These can be accessed to identify important features for classification, as demonstrated in the [Feature importance tutorial](Exploring_Feature_Importances.ipynb).
+ - The hierarchy object produced by `mmc.classify()` has all items needed to apply this classification on held-out data or other datasets, by running `mmc.classify(retrain=False)`, as in the [Pretrained Classification tutorial](Pretrained_Classification.ipynb). Projecting the classification requires that expression information for all features used in the original classification are available in the held-out dataset.
+    - One should also be cautious to ensure that cell types present in the training dataset are representative of cell types present in the held-out data. 
+    - Rather than applying pretrained MMoCHi models, we recommend attempting to retrain new classifiers at each level of the hierarchy using high-confidence thresholding on this new dataset. 
  
 ### `.log` file (if `mmc.log_to_file()` is run before `mmc.classify()`)
 

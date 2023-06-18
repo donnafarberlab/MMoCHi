@@ -5,3 +5,12 @@ https://stackoverflow.com/questions/59215996/how-to-add-a-logo-to-my-readthedocs
 .wy-side-nav-search .wy-dropdown > a img.logo, .wy-side-nav-search > a img.logo {
     width: 275px;
 }
+
+/*
+Autosummary tables are too long and require scrolling...
+https://stackoverflow.com/questions/68182085/word-wrap-in-sphinx-autosummary-generated-table
+*/
+.wy-table-responsive table td,
+.wy-table-responsive table th {
+  white-space: normal;
+}

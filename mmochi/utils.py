@@ -7,11 +7,12 @@ from typing import Union, Optional, Sequence, Any, Mapping, List, Tuple, Callabl
 import scanpy as sc
 import gc
 from .logger import logg
+import warnings
 
 DATA_KEY = 'landmark_protein'
 BATCH_KEY = 'batch'
 
-def convert_10x(adata: anndata.AnnData, drop_totalseq: bool=True, data_key: str='protein'):
+def convert_10x(adata: anndata.AnnData, drop_totalseq: bool=True, data_key: str='protein') -> anndata.AnnData:
     '''
     Convert default 10X data to an AnnData with protein in the .obsm, and gene expression in the .X
     
@@ -79,7 +80,7 @@ def preprocess_adatas(adatas: Union[anndata.AnnData, List[anndata.AnnData], str,
                       backup_urls: Union[str, List[str]]=None,
                       data_key: str='protein',
                       log_CP_GEX: int=1e4,
-                      log_CP_ADT: int=1e2):
+                      log_CP_ADT: int=1e3) -> List[anndata.AnnData]:
     
     '''
     Function to load and preprocess adatas from either filename(s) or backup_url(s). 
@@ -95,15 +96,15 @@ def preprocess_adatas(adatas: Union[anndata.AnnData, List[anndata.AnnData], str,
     drop_totalseq
         Determines whether to drop '_TotalSeq' from the data_key labels
     intersect
-        Determines whether to subset each dataframe to 'data_key' and gene expression data only found on all dataframes
+        Determines whether to subset each DataFrame to 'data_key' and gene expression data only found on all DataFrames
     backup_urls
-        A string or list of strings of urls to the AnnData objects to be used if the filepath does not work
+        url or urls to the AnnData objects to be used if the filepath does not work
     data_key
         Must be in .obsm, name used for data intersection and adt normalization
     log_CP_GEX
-        Normalizes Gene expression data to log of 1 + counts per this value, default 1000
+        Normalizes Gene expression counts to log(counts/total_counts*log_CP_GEX + 1), default 10000
     log_CP_ADT
-        Normalizes ADT data to log of 1 + counts per this value, default 10
+        Normalizes ADT counts to log(counts/total_counts*log_CP_ADT + 1), default 1000
         
     Returns
     -------
@@ -115,10 +116,11 @@ def preprocess_adatas(adatas: Union[anndata.AnnData, List[anndata.AnnData], str,
         if intersect:
             containing only the subset of genes and 'data_key' that exists in all objects
         if log_CP_GEX:
-            log normalized gene counts per x value (default 1000)
+            log normalized gene counts per x value 
         if log_CP_ADT: 
-            log normalized 'data_key' counts per x value (default 10)
+            log normalized 'data_key' counts per x value 
      '''
+    warnings.filterwarnings("ignore", category=UserWarning) # Ignores var_names not unique warnings
     if isinstance(adatas, anndata.AnnData) or isinstance(adatas,str):
         adatas = [adatas]
     if isinstance(backup_urls, str):
@@ -221,7 +223,7 @@ def _marker(keyword: str, cols: List[str], allow_multiple: bool=False) -> Union[
     cols
         List of marker names in which to search for [keyword]
     allow_multiples
-        Whether to return a list of matches if there are multiple mathches or throw an error
+        Whether to return a list of matches if there are multiple matches or throw an error
         
     Returns 
     -------
@@ -266,7 +268,7 @@ def marker(adata: anndata.AnnData, parameter: Union[str, List[str]],
         Location in the .obsm to look for marker name
         If None, searches adata.var_names
     allow_multiple
-        Whether to return a list of matches if there are multiple mathches or throw an error
+        Whether to return a list of matches if there are multiple matches or throw an error
         
     Returns 
     -------
@@ -374,7 +376,7 @@ def umap_interrogate_level(adata: anndata.AnnData, level: str, batch_key: str=No
                             key_added: str='lin', umap_basis: str='X_umap',
                             cmap: Optional[List[str]] =None,**kwargs):
     '''
-    Plots UMAPs showing events selected by high confidence thresholding and used for training, and breaks down annotation confusion onto the UMAP.
+    Plots UMAPs showing events selected by high-confidence thresholding and used for training and breaks down annotation confusion onto the UMAP.
         
     Parameters
     ----------
@@ -394,22 +396,22 @@ def umap_interrogate_level(adata: anndata.AnnData, level: str, batch_key: str=No
         Sent to scanpy.pl.embedding
     '''
     batch_masks, batches = batch_iterator(adata,batch_key)
-    adata.obs['High Confidence Thresh'] = adata.obsm[key_added][f'{level}_hc'].replace({'nan':None})
-    adata.obs['High Confidence Thresh'] = pd.Categorical(adata.obs['High Confidence Thresh'], 
-                                                         categories = sorted(set(adata.obs['High Confidence Thresh'])-set([None,'?']))+['?'])
-    adata.obs['Training Data'] = adata.obs['High Confidence Thresh'].copy()
+    adata.obs['High-Confidence Thresh'] = adata.obsm[key_added][f'{level}_hc'].replace({'nan':None})
+    adata.obs['High-Confidence Thresh'] = pd.Categorical(adata.obs['High-Confidence Thresh'], 
+                                                         categories = sorted(set(adata.obs['High-Confidence Thresh'])-set([None,'?',np.nan]))+['?'])
+    adata.obs['Training Data'] = adata.obs['High-Confidence Thresh'].copy()
     adata.obs.loc[~adata.obsm[key_added][f'{level}_train'],'Training Data'] = None
-    adata.obs['Training Counts'] = adata.obsm[key_added][f'{level}_tcounts'].replace({0:np.nan})
+    adata.obs['Training Counts'] = adata.obsm[key_added][f'{level}_traincounts'].replace({0:np.nan})
     
     adata.obs['HC -> Class'] = (adata.obsm[key_added][f'{level}_hc'].astype(str) +" -> "+ adata.obsm[key_added][level+'_class'].astype(str))
     adata.obs['HC -> Class'] = adata.obs['HC -> Class'].replace({'nan -> nan':None})
     adata.obs['HC -> Class'] = pd.Categorical(adata.obs['HC -> Class'], categories = sorted(set(adata.obs['HC -> Class'])-set([None])))
 
     for batch_mask, batch in zip(batch_masks, batches):
-        sc.pl.embedding(adata[batch_mask],basis = umap_basis,color=['High Confidence Thresh','Training Data','Training Counts','HC -> Class'],
+        sc.pl.embedding(adata[batch_mask],basis = umap_basis,color=['High-Confidence Thresh','Training Data','Training Counts','HC -> Class'],
                         cmap=cmap, ncols=2, **kwargs)
         gc.collect()
-    adata.obs = adata.obs.drop(['High Confidence Thresh','Training Data','Training Counts','HC -> Class'],axis=1)
+    adata.obs = adata.obs.drop(['High-Confidence Thresh','Training Data','Training Counts','HC -> Class'],axis=1)
     return
         
 def get_data(adata: anndata.AnnData,
@@ -442,7 +444,7 @@ def get_data(adata: anndata.AnnData,
     Returns
     -------
     data
-       Array of data in the AnnData object whoes label matches parameter
+       Array of data in the AnnData object whose label matches parameter
     '''
     data = None
     if "_mod_" in parameter:
@@ -566,7 +568,7 @@ def generate_exclusive_features(adata_list: Union[List[str], List[anndata.AnnDat
     adata_list
         List of objects in which to search for common features
     data_key
-        Optional key in the adata.obsm to use for features, will be interesected in addition to .var_names
+        Optional key in the adata.obsm to use for features, will be intersected in addition to .var_names
         
     Returns
     -------
@@ -591,7 +593,7 @@ def generate_exclusive_features(adata_list: Union[List[str], List[anndata.AnnDat
 
 def _validate_names(names: List[str], reserved_strings: List[str]=['_obs','_gex','_mod_']):
     '''
-    Checks names to ensure none of the reserved strings are contained within them
+    Checks names to ensure none of the reserved strings are contained in them
 
     Parameters
     ----------

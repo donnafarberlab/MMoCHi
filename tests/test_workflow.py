@@ -222,11 +222,12 @@ def test_threshold(landmarked):
     assert type(x) == np.ndarray
     return
 
-@pytest.mark.parametrize("mode",['fancy rerun all','fancy fill in'])
-def test_hierarchy_run_thresholds(test_hierarchy,landmarked,mode): 
-    test_hierarchy.run_all_thresholds(landmarked,data_key='landmark_protein',
-                                            batch_key='batch',mode=mode)
-    return test_hierarchy
+# Fails on CLI on newer versions of ipywidgets as there is nowhere to plot
+# @pytest.mark.parametrize("mode",['fancy rerun all','fancy fill in'])
+# def test_hierarchy_run_thresholds(test_hierarchy,landmarked,mode): 
+#     test_hierarchy.run_all_thresholds(landmarked,data_key='landmark_protein',
+#                                             batch_key='batch',mode=mode)
+#     return test_hierarchy
 
 @pytest.mark.parametrize("mode",['every level','fill in','rerun all'])
 def test_hierarchy_run_thresholds2(test_hierarchy,landmarked,mode): 
@@ -242,7 +243,7 @@ def test_hierarchy_load_thresholds(test_hierarchy):
     hierarchy.drop_threshold(None,None,0)
     hierarchy.load_thresholds('docs/data/integrated_thresholds.csv')
     hierarchy.drop_threshold(slice(None),slice(None),0)
-    hierarchy.generate_batchless_thresholds()
+    hierarchy.batchless_thresholds()
     hierarchy.load_thresholds('docs/data/integrated_thresholds.csv')
     hierarchy.save_thresholds('docs/data/integrated_thresholds.csv')
     hierarchy.save_thresholds(None)
@@ -259,14 +260,41 @@ def _verify_lin(adata, classification_levels):
     for level in classification_levels:
         hc_na = adata.obsm['lin'][level+'_hc'].isna()
         holdout_na = adata.obsm['lin'][level+'_holdout'] == False
-        tcounts_na = adata.obsm['lin'][level+'_tcounts'].isna()
+        tcounts_na = adata.obsm['lin'][level+'_traincounts'].isna()
         train_na = adata.obsm['lin'][level+'_train'] == False
-        proba_na = adata.obsm['lin'][level+'_proba'].isna()
+        proba_na = adata.obsm['lin'][level+'_probability'].isna()
         class_na = adata.obsm['lin'][level+'_class'].isna()
         assert all(adata.obsm['lin'][hc_na & holdout_na & tcounts_na & train_na & proba_na & class_na] == adata.obsm['lin'][hc_na])
         assert sum(adata.obsm['lin'][level+'_holdout'][~holdout_na] & adata.obsm['lin'][level+'_train'][~train_na]) == 0
-        assert sum((~adata.obsm['lin'][level+'_train'][~holdout_na]) & (adata.obsm['lin'][level+'_tcounts'][~holdout_na] > 0)) == 0
-        assert sum((adata.obsm['lin'][level+'_train'][~holdout_na]) & ~(adata.obsm['lin'][level+'_tcounts'][~train_na] > 0)) == 0
+        assert sum((~adata.obsm['lin'][level+'_train'][~holdout_na]) & (adata.obsm['lin'][level+'_traincounts'][~holdout_na] > 0)) == 0
+        assert sum((adata.obsm['lin'][level+'_train'][~holdout_na]) & ~(adata.obsm['lin'][level+'_traincounts'][~train_na] > 0)) == 0
+
+        
+        
+def test_classify_cutoff(landmarked, test_hierarchy_load_thresholds):
+    mmc.classifier.DEBUG_ERRORS = True
+    test_hierarchy_load_thresholds = test_hierarchy_load_thresholds.copy()
+    test_hierarchy_load_thresholds.check_all_markers(landmarked,'landmark_protein')
+    test_hierarchy_load_thresholds.default_is_cutoff = True
+    adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
+                                   'landmark_protein', batch_key='batch',
+                                   retrain = True)
+    adata = mmc.terminal_names(adata)
+    adata = mmc.terminal_names(adata,voting_reference='batch')
+    mmc.classifier.DEBUG_ERRORS = False
+    return
+
+def test_classify_nparray(landmarked, test_hierarchy_load_thresholds):
+    mmc.classifier.DEBUG_ERRORS = True
+    landmarked = landmarked.copy()
+    landmarked.X = landmarked.X.A
+    adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
+                                   'landmark_protein', batch_key='batch',
+                                   retrain = True)
+    adata = mmc.terminal_names(adata)
+    mmc.classifier.DEBUG_ERRORS = False
+    _verify_lin(adata, hierarchy.get_classifications())
+    return
 
 def test_classify_defaults(landmarked, test_hierarchy_load_thresholds):
     mmc.classifier.DEBUG_ERRORS = True

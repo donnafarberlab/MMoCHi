@@ -11,7 +11,7 @@ from typing import Union, Optional, Sequence, Any, Mapping, List, Tuple, Callabl
 import anndata
 
 from . import utils
-from .logger import logg # Currently unused
+from .logger import logg
 
 def plot_tree(hierarchy, level: str,
               tree_number: int=random.randint(1,10), save: str='tree.png'):
@@ -34,7 +34,7 @@ def plot_tree(hierarchy, level: str,
     '''
     clf,feature_names = hierarchy.get_clf(level, base=True)
     estimator =  clf.estimators_[tree_number]
-    print(clf.estimators_[tree_number].tree_.node_count, 'nodes in tree')
+    logg.info(clf.estimators_[tree_number].tree_.node_count, 'nodes in tree')
     from sklearn.tree import export_graphviz
     # Export as dot file
     export_graphviz(estimator, out_file='tree.dot', 
@@ -57,7 +57,7 @@ def plot_tree(hierarchy, level: str,
     return
 
 def feature_importances(hierarchy, level: str) -> pd.DataFrame:
-    '''Returns a dataframe of features and their importances in the random forest of a given level. 
+    '''Returns a DataFrame of features and their importances in the random forest of a given level. 
     See sklearn.RandomForestClassifier for more information on interpreting these values.
     
     Parameters
@@ -129,7 +129,6 @@ def _check_pdf_open(save: str) -> Union[str, PdfPages]:
         pdf_page = PdfPages(save)
         return pdf_page
     else:
-        # logg.warn(f"Filepath must be a string ending in .pdf, returning filepath")
         return save
 
 def _check_pdf_close(save: PdfPages):
@@ -177,11 +176,11 @@ def _mask_adata(adata: anndata.AnnData, level: str,
     level
         Level of the classifier to create mask for
     hc_only
-        Whether to only include high confidence data points that were called as pos or neg for the specified level of classification
+        Whether to only include high-confidence data points that were called as pos or neg for the specified level of classification
     holdout_only
-        Whether to only include data only non training data for the specified level of classification
+        Whether to only include data only non-training data for the specified level of classification
     key_added
-        Key in .obsm where one checks for high confidence and untrained data 
+        Key in .obsm where one checks for high-confidence and untrained data 
     
     Returns 
     -------
@@ -201,18 +200,18 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
                    save: str=None, show: bool=True,
                    title_addition: str=None, **kwargs):
     '''
-    Determine the performance at a single level by creating confusion plots of performance
+    Determine the performance at a single level by creating a confusion plot.
     
     Parameters
     ----------
     adata
-        Object containing a dataframe in the .obsm[data_key] specifiying the results of high_confidence thresholding, training, and classification
+        Object containing a DataFrame in the .obsm[key_added] specifiying the results of high_confidence thresholding, training, and classification
     levels
         Level or levels of the classifier to create confusion plots for, "all" creates plots for whole hierarchy
     hierarchy
-        Heirarchy object with classification level information
+        Hierarchy object with classification level information
     key_added
-        Key in .obsm, where information on whether a level had a high confidence call or was training data
+        Key in .obsm, where information on whether a level had a high-confidence call or was training data
     holdout_only
         Whether to only include data that was not trained on
     batch_key
@@ -246,13 +245,13 @@ def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only=
     Parameters
     ----------
     adata
-        Object containing high confidence information and training calls for each event
+        Object containing high-confidence information and training calls for each event
     level
         Level of the classifier to create a confusion plot for
     hierarchy
-        Heirarchy object with classification level information
+        Hierarchy object with classification level information
     key_added
-        Key in .obsm, where information on whether a level had a high confidence call or was training data
+        Key in .obsm, where information on whether a level had a high-confidence call or was training data
     holdout_only
         Whether to only look at the results that were not trained on
     **kwargs are passed to sklearn.metrics.ConfusionMatrixDisplay.from_predictions()
@@ -282,23 +281,24 @@ def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only=
 
 def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
                     hierarchy=None, key_added: str='lin',
-                    proba_suffix: str='_proba', holdout_only: bool=True,
+                    probability_suffix: str='_probabilities', holdout_only: bool=True,
                     batch_key: str=None, save: str=None,
                     show: bool=True, title_addition: str=None,
                     bins: int=10):
     '''
-    Performs confidence thresholds on specified levels of the classifier
+    Determine how confident classification is for each subset by displaying calibration curves.
     
     Parameters
     ----------
     adata
+        AnnData object containing .obsm[key_added] and .obs[batch_key]
     levels
         Level or levels of the classifier to create confidence plots for, "all" creates plots for whole hierarchy
     hierarchy
-        Heirarchy object with classification level information
+        Hierarchy object with classification level information
     key_added
-        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
-    proba_suffix
+        Key in .obsm, where results from high-confidence thresholding and predicted probabilities are stored
+    probability_suffix
         Suffix in .obsm[key_added] the delineates probability data for the classification
     holdout_only
         Whether to only include data that was not trained on
@@ -318,7 +318,7 @@ def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
     for batch_mask, batch in zip(batch_masks, batches):
         for level in levels:
-            fig, ax = _plot_confidence(adata[batch_mask],level,key_added,proba_suffix,holdout_only,bins=bins)
+            fig, ax = _plot_confidence(adata[batch_mask],level,key_added,probability_suffix,holdout_only,bins=bins)
             if not title_addition is None:
                 ax.set_title(ax.get_title()+f'\n{title_addition}')
             if not batch_key is None:
@@ -328,7 +328,7 @@ def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
     return
 
 def _plot_confidence(adata: anndata.AnnData, level: str, 
-                     key_added: str='lin', proba_suffix: str='_proba',
+                     key_added: str='lin', probability_suffix: str='_probability',
                      holdout_only: bool=True, bins: int=10):
     '''
     Plots one vs all confidence thresholds on a specific level of the classifier. 
@@ -341,8 +341,8 @@ def _plot_confidence(adata: anndata.AnnData, level: str,
     level
         Level of the classifier on which to create the thresholds
     key_added
-        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
-    proba_suffix
+        Key in .obsm, where results from high-confidence thresholding and predicted probabilities are stored
+    probability_suffix
         Suffix in .obsm[key_added] the delineates probability data for the classification
     holdout_only
         Whether to only include data that was not trained on
@@ -353,7 +353,7 @@ def _plot_confidence(adata: anndata.AnnData, level: str,
     fig, ax1: Confidence plot for specified level of the classifier
     '''
     adata = _mask_adata(adata,level,hc_only=True,holdout_only=holdout_only,key_added=key_added)
-    df = adata.uns[level+proba_suffix].copy()
+    df = adata.uns[level+probability_suffix].copy()
     df = df.merge(adata.obsm[key_added][level+'_hc'],how='inner',left_index=True, right_index=True)
     # Plot the Calibration Curve for every class
     fig = plt.figure(figsize=(10, 10))
@@ -388,19 +388,19 @@ def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]
                             holdout_only: bool=False, batch_key: str=None, key_added: str='lin',
                             save: str=None, show: bool=True,
                             title_addition: str=None):
-    '''Creates violin plots for the most important 25 gene, protein, or overall features for each specified level in levels
+    '''Creates violin plots for the 25 most important genes or proteins for each specified level in levels
     
     Parameters
     ----------
     adata
         AnnData object to use for plotting
     levels
-        Level or levels of the classifier to plot important features of, "all" creates plots for whole hierarchy
+        Level or levels of the classifier to plot important features of "all" creates plots for whole hierarchy
     hierarchy
-        Heirarchy object with classification level information
+        Hierarchy object with classification level information
     reference
         Key in the .obs used to group the violin plots.
-        If 'hc -> class', will also add column to obsm containing high confidence -> level tags to the data
+        If 'hc -> class', will also add column to obsm containing high-confidence -> level tags to the data
     data_key
         Key in .obsm where feature data exists
     holdout_only
@@ -408,7 +408,7 @@ def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]
     batch_key
         Column within the adata.obs that delineates batches
     key_added
-        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
+        Key in .obsm, where results from high-confidence thresholding and predicted probabilities are stored
     save
         Filepath to pdf where the plots will be saved
     show
@@ -448,16 +448,16 @@ def _plot_important_features(adata: anndata.AnnData, level: str,
     level
         Level of the classifier on which to create the plot of important features 
     hierarchy
-        Heirarchy object with classification level information
+        Hierarchy object with classification level information
     reference
         Key in the .obs used to group the violin plots.
-        If 'hc -> class', will also add column to obsm containing high confidence -> level tags to the data
+        If 'hc -> class', will also add column to obsm containing high-confidence -> level tags to the data
     holdout_only
         Whether to only include data that was not trained on
     data_key
         Key in .obsm where feature data exists
     key_added
-        Key in .obsm, where results from high confidence thresholding and predicted probabilities are stored
+        Key in .obsm, where results from high-confidence thresholding and predicted probabilities are stored
     
     Returns
     -------

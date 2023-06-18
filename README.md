@@ -3,16 +3,16 @@
 <img align="right" src="./docs/_static/mmochi_logo.svg" width="480">
 
 ## About
-MMoCHi is a hierarchical classification system designed around CITE-Seq data, but applicable to diverse single cell sequencing modalities. 
+MMoCHi is a hierarchical classification system designed for CITE-Seq data, but applicable to diverse single-cell sequencing modalities. 
 It includes tools for:
 
 1. <b>Integrating data</b> of Antibody Derived Tag (ADT) expression
-2. <b>High confidence thresholding</b> of cell populations on ADT expression, gene expression, and cell metadata 
+2. <b>High-confidence thresholding</b> of cell populations using ADT expression, gene expression, and cell metadata 
 3. <b>Building a hierarchy</b> of cell subset classifiers 
 4. <b>Training and evaluating</b> random forest classifiers at each hierarchy level
 
 ## Docs
-A ReadTheDocs is on the way! For now, refer to docstrings of each function.
+Documentation is on the way!
 
 ## Tutorials
 
@@ -24,108 +24,118 @@ A ReadTheDocs is on the way! For now, refer to docstrings of each function.
 ### In-Depth Resources 
 
 - **[Landmark Registration](./docs/Landmark_Registration.ipynb)** - Improving integration by manually adjusting peak identification.
-- **[Hierarchy Design](./docs/Hierarchy_Design.ipynb)** - Building your own MMoCHi hierarchy object and selecting markers for high confidence definitions.
-- **[High Confidence Thresholding](./docs/High_Confidence_Thresholding.ipynb)** - Careful thresholding to improve high confidence selection and training!
+- **[Hierarchy Design](./docs/Hierarchy_Design.ipynb)** - Building your own MMoCHi hierarchy object and selecting markers for high-confidence definitions.
+- **[High-Confidence Thresholding](./docs/High_Confidence_Thresholding.ipynb)** - Careful thresholding to improve high-confidence selection and training!
 - **[Exploring Feature Importances](./docs/Exploring_Feature_Importances.ipynb)** - Interpreting random forests: What features are most useful for classification?
 - **[Pretrained Classification](./docs/Pretrained_Classification.ipynb)** - Applying a pretrained classifier to other datasets.
 
 # Installation Instructions
 
-### Setting up a Conda Environment
+### Setting up a virtual environment
 
-MMoCHi is built for Python == 3.8, but may also work on later python versions.
-
-The easiest way to setup an environment is with a Python distribution in miniconda or anaconda:
+MMoCHi was developed using Python 3.8, but may also work on later Python versions. We recommend isolating installation using a virtual environment. You can create a virtual environment using miniconda or anaconda:
 ```
 conda create -n mmochi python=3.8
 ```
-### Options to set up Jupyter
-
-MMoCHi was designed to be run in [Jupyter IPython Notebooks](https://jupyter.org/). To use this environment in Jupyter Labs you can either create a fresh install of Jupyter within this new conda environment:
+Once you create this enviornment, activate it: 
 ```
 conda activate mmochi
+```
+Ensure this environment is activated for all of the following installation steps. For this reason, we recommend running installation in terminal, not through IPython notebooks. 
+
+### Setting up Jupyter
+
+MMoCHi was designed to be run in [Jupyter IPython Notebooks](https://jupyter.org/). If you already have JupyterLab installed, you can use ipykernel to install your new environment into Jupyter as a separate kernel. 
+```
+conda install ipykernel
+python -m ipykernel install --user --name=mmochi
+```
+This environment can now be accessed within Jupyter via the "Kernel>Change kernel..." menu. You may need to restart Jupyter for changes to apply.
+
+**ALTERNATIVELY**, if you do not have Jupyter preinstalled, you could create a fresh install of JupyterLab within this new conda environment:
+```
 conda install -c conda-forge jupyterlab
 jupyter lab
 ```
-or you can install this new conda environment as a new kernel to your current Jupyter installation.
-```
-conda activate mmochi
-conda install ipykernel
-python -m ipykernel install --user --name=mmochi
-conda deactivate
-juptyer lab
-```
-Note that with this option, the mmochi environment is accessed via the "Kernel>Change kernel..." menu. Note that with this option, depending on your Jupyter version, terminal commands (such as `pip install`) run within a code block may be run in the base environment by default, so editing the conda environment will require running `conda activate mmochi` in a new terminal window to enter the environment.
 
-### Cloning the Repository
-Once you have set up the environment, clone this repository and `cd` into its root directory.:
+### Cloning the repository
+
+Once you have set up the environment, clone this repository and `cd` into its root directory: 
 ```
-conda activate mmochi
 git clone https://github.com/donnafarberlab/mmochi.git
 cd mmochi
 ```
-Alternatively, you can download the repository as a .zip file, extract it, and navigate to its root directory (likely `MMoCHi-main`).
+(Note: The root directory is the one the README.md)
 
-### Installing Dependencies
+**ALTERNATIVELY**, you can download the repository as a .zip file, extract it, and navigate to its root directory (which may be named `MMoCHi-main`).
 
-Most of the dependencies for MMoCHi can be installed via conda using:
+### Installing dependencies
+Most of the dependencies for MMoCHi can be installed via conda:
 ```
-conda activate mmochi
 conda install -c conda-forge --file requirements.txt
 ```
 
-While not required, graphviz can be installed to enable the use of plotting functions for displaying complex hierarchies or trees from a random forest, and harmonypy can be installed to follow along in our tutorial:
+While not required, additional dependencies can be installed to enable hierarchy plotting functions (graphviz) and to follow along in our tutorials (harmonypy):
 ```
-conda activate mmochi
 sudo apt-get install graphviz
-pip install harmonypy
+python -m pip install harmonypy
 ```
 
 If you are on an Intel(R) processor, you can also install the following package to accelerate computation:
 ```
-conda activate mmochi
-pip install scikit-learn-intelex
+python -m pip install scikit-learn-intelex
 ```
 
 ### Installing MMoCHi
-Lastly, install the package from source:
+Lastly, while in MMoCHi's root directory, install the package from source. This install also includes dependencies for running landmark registration and for testing your installation with pytest.
+```
+python -m pip install ".[landmarking,pytest]"
+```
+
+### Testing your installation
+Testing can help verify a successful install of MMoCHi. While the pytest covers ~90% of the code, it still does not capture many use-cases. Thus, while it catches major dependency issues, it may not detect issues with functions requiring user interaction. Please also run through the tutorials to verify your environment is correct. From MMoCHi's root directory run:
 ```
 conda activate mmochi
-pip install .
+python -m pytest
 ```
 
-Optional dependencies for landmark registration, compiling documentation, or running pytest can be installed using one of the following:
+### Troubleshooting installation
+Although conda usually handles conflicts between dependency versions, issues sometimes still arise. Here, we have also provided a list of set dependencies for Python 3.8. Recreate your environment, set up Jupyter, navigate to MMoCHi's root directory, then install as follows:
 ```
-pip install .[landmarking]
-pip install .[docs]
-pip install .[pytest]
+conda activate mmochi
+python -m pip install -r Python3_8_requirements.txt
+python -m pip install .
 ```
 
-### Compiling the docs [OPTIONAL]
+### For developers
+Contributions to MMoCHi are welcome. Please get in touch if you would like to discuss. To install for development, navigate to MMoCHi's root directory and create an editable install as follows:
+```
+python -m pip install -e ".[docs,landmarking,pytest,tutorials]"
+```
+In addition to running the testing suite, you can also test tutorial notebooks automatically, check code coverage, and test many python versions and dependency sets:
+```
+python -m pytest --nbmake docs/Integrated_Classification.ipynb docs/Landmark_Registration.ipynb docs/Hierarchy_Design.ipynb docs/High_Confidence_Thresholding.ipynb docs/Exploring_Feature_Importances.ipynb docs/Pretrained_Classification.ipynb
 
-After running `pip install .[docs]`, enter the docs directory and compile the docs:
+python -m pytest --cov=mmochi --cov-report=html 
+python -m pytest --nbmake docs/*.ipynb --cov=mmochi --cov-report=html --cov-append
 
+python -m tox -r
+```
+
+You can also compile the docs using the following command:
 ```
 cd docs
 make html
 ```
+There will be many warnings, but it should end with `"build succeeded"`. You can then view the docs by opening `docs/_build/html/index.html` in your local browser.
 
-There will be many warnings, but it should end with `"build succeeded"`. You can then view the docs by opening 
-`docs/_build/html/index.html`, which should pop up as an interactive site in your local browser.
-
-If you are having trouble with your pandoc installation, try uninstalling it with pip, and reinstalling it with conda.
-
+Occationally, there are errors running pandoc when installed using pip. Try resinstalling with conda:
 ```
 pip uninstall pandoc
 conda install -c conda-forge pandoc
+cd docs
+make html
 ```
 
 
-### Testing your installation
-This will help verify a successful install of MMoCHi. While the pytest covers ~90% of the code, it still does not capture many use-cases. Thus, while it will catch major issues in dependencies, it may not detect issues with functions requiring user interaction. Please also run through the tutorials to verify your environment is correct.
-From the mmochi folder run:
-```
-conda activate mmochi
-conda install pytest
-pytest
-```
+

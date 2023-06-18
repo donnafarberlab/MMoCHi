@@ -11,19 +11,10 @@ MMoCHi - MultiModal Classification Hierarchy
 * For more details on formatting your data correctly, read the :ref:`Input and Output Specifications`.
 * For complete documentation, check out our :ref:`api`.
 * Check out our `Github <https://github.com/donnafarberlab/MMoCHi>`_! 
-
-
-=======================
-
-
-
-
-
-   
+  
 .. tocTree::
    :hidden:
-   :maxdepth: -1
-   :includehidden:
+   :maxdepth: 1
 
    installation
    Input_Output_Specs

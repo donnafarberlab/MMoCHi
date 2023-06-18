@@ -11,6 +11,13 @@ __pycache__/
 /dist/
 
 *~
+*.log
+*.hierarchy
+*.json
+*.pdf
+*.dot
+*.h5ad
+*.h5
 
 .DS_Store
 Thumbs.db

@@ -21,11 +21,11 @@ from . import thresholding
 
 DEBUG_ERRORS = False
 
-def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,pd.core.series.Series],
+def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
                      data_key: Optional[str]=utils.DATA_KEY, reduce_features_min_cells: int=0, 
                      features_limit=None) -> Tuple[sp.csr_matrix, list]:
     """
-    Setup that can optionally be completed before running mmc.classify. This can be run before the classifier (to reduce runtime of the classifier function in a parameter optimization loop), or is automatically run when training a classifier. It concatenates the .X and any data_key in the .obsm, then performs feature reduction (if reduce_features_min_cells > 0). Next, features can be limited by an external feature set. Then, it sorts the resulting feature_names (the columns from the .X and .obsm[data_key]) and csr.matrix, alphabetically, to make the feature order reproducible across runs. If defined, feature limits can be performed so that you can match the expected features of the hierarchy.
+    Setup that can optionally be completed before running mmc.classify. This can be run before the classifier (to reduce runtime of the classifier function in a parameter optimization loop) or is automatically run when training a classifier. It concatenates the .X and any data_key in the .obsm, then performs feature reduction (if reduce_features_min_cells > 0). Next, features can be limited by an external feature set. Then, it sorts the resulting feature_names (the columns from the .X and .obsm[data_key]) and csr.matrix, alphabetically, to make the feature order reproducible across runs. If defined, feature limits can be performed so that you can match the expected features of the hierarchy.
 
     Parameters
     ----------
@@ -34,11 +34,11 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,pd.core.ser
     x_modalities
         Name of the modality of the data in the .X of adata
     data_key
-        Key in adata.obsm to concatinate into .X and to reduce features across
+        Key in adata.obsm to concatenate into .X and to reduce features across
     reduce_features_min_cells
         Remove features that vary in fewer than this number of cells passed to _reduce_features
     features_limit
-        listlike of str or dictonary in the format `{'modality_1':['gene_1', 'gene_2', ...], 'modality_2':'All'}`
+        listlike of str or dictionary in the format `{'modality_1':['gene_1', 'gene_2', ...], 'modality_2':'All'}`
         Specifies the allowed features to classify on for a given modality
     
     Returns
@@ -60,7 +60,8 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,pd.core.ser
         features_used = list(adata.var_names+"_mod_"+x_modalities)
     else:
         logg.print('Using .X and '+str(data_key))
-        X = sp.hstack([adata.X,adata.obsm[data_key]],format='csr')
+        X = sp.csr_matrix(adata.X)
+        X = sp.hstack([X,adata.obsm[data_key]],format='csr')
         utils._validate_names(adata.var_names) 
         utils._validate_names(adata.obsm[data_key].columns) 
         features_used = list(adata.var_names+"_mod_"+x_modalities) + list(adata.obsm[data_key].columns+"_mod_"+data_key)
@@ -196,7 +197,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
              batch_key: Optional[str]=utils.BATCH_KEY, retrain: bool=False,
              plot_thresholds: bool=False, reduce_features_min_cells: int=25,
              allow_spike_ins: bool=True, enforce_holdout: bool=True, 
-             proba_suffix: Optional[str]='_proba', 
+             probabilities_suffix: Optional[str]='_probabilities', 
              resample_method: Optional[str]='oversample', weight_integration: bool=False,
              X: Optional[sp.csr_matrix]=None, features_used: Optional[List[str]]=None,
              probability_cutoff: float=0,
@@ -204,12 +205,12 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
              skip_to: Optional[str]=None, end_at: Optional[str]=None,
              reference: Optional[str]=None) -> Tuple[anndata.AnnData, hierarchy.Hierarchy]:
     """
-    Classify subsets using the provided hierarchy. If the hierarchy has not yet been trained, this function trains the hierarchy and predicts cell types. If the hierarchy has been trained, this classifier will not retrain random forests unless explicitly asked to (retrain=True).
-    
-    NOTE: Many classifier kwargs are defined in the hierarchy on a node-by-node basis. Please see mmc.Hierarchy() and mmc.add_classification() for details. 
+    Classify subsets using the provided hierarchy. If the hierarchy has not yet been trained, this function trains the hierarchy and predicts cell types. If the hierarchy has been trained, this classifier will not retrain random forests unless explicitly asked to (retrain=True). Many classifier kwargs are defined in the hierarchy on a node-by-node basis. Please see mmc.Hierarchy() and mmc.add_classification() for additional details. 
     
     We recommend following this function with mmc.terminal_names() to put classifications into a `.obs` column
     
+    Note: If this function terminates prematurely, adata.obs_names may be corrupted. The original adata.obs_names can be found in adata.obs['MMoCHi_obs_names'].
+
     Parameters
     ----------
     adata
@@ -217,9 +218,9 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     hierarchy
         Hierarchy design specifying one or more classification levels and subsets.
     key_added
-        Key in adata.obsm to store the resulting dataframe of the classifier's results
+        Key in adata.obsm to store the resulting DataFrame of the classifier's results
     data_key
-        Key in adata.obsm to be used for high confidence thresholding.
+        Key in adata.obsm to be used for high-confidence thresholding.
     x_data_key
         Key in adata.obsm used for predictions, if undefined, defaults to data_key
     x_modalities
@@ -229,30 +230,30 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     retrain
         If the classification level of a hierarchy is already defined, whether to replace that classifier with a retrained one.
         If False, no new classifier would be trained, and that classifier is used for prediction of the data.
-        Overrides reduce_features_min_cells to 0 (as this early stage feature reduction often breaks re-running models).
+        Overrides reduce_features_min_cells to 0 (as this early-stage feature reduction often breaks re-running models).
     plot_thresholds
-        Whether to display histograms of expression distribtuion while performing high confidence thresholding
+        Whether to display histograms of expression distribution while performing high-confidence thresholding
     reduce_features_min_cells
         Remove features that are expressed in fewer than this number, passed to _reduce_features. 
         Feature reduction can be a very powerful tool for improving classifier performance. 
-        Only used if X and features_used are not provided, and retrain is True.
+        Only used if X and features_used are not provided and retrain is True.
     allow_spike_ins
         Whether to allow spike ins when doing batched data. Spike ins are performed if a subset is below the minimum threshold within an individual batch, 
         but not the overall dataset. If False, errors may occur if there are no cells of a particular subset within a batch. Warning, spike ins currently 
         do not respect held out data, meaning there will be much fewer than 20% held out data if spike ins are frequent.
     enforce_holdout
         Wehther to enforce a hold out of an additional 20% at each classification level, to prevent spike-ins from using that data.        
-    proba_suffix
-        If defined, probability outputs of predict_proba will be saved to the .uns[level+proba_suffix]
+    probabilities_suffix
+        If defined, probability outputs of the full df of predict_probabilities will be saved to the .uns[level+probabilities_suffix]
     resample_method
-        Method to resample high confidence data prior to training, passed to _balance_training_classes
+        Method used to resample high-confidence data prior to training, passed to _balance_training_classes. "Oversample" or None. Other methods are experimental. See _balance_training_classes and the imblearn package for details.
     weight_integration
         Whether to have each batch represented equally in the forest, or weight the number of trees from each batch to their representation in the total dataset 
     X, features_used: scipy.sparse.csr_matrix and listlike of str
         Optional setup data to circumvent the initial classifier setup functions. The presence of both of these overrides any predefined feature reduction 
         techniques.   
     probability_cutoff
-        Between 0 and 1, the minimum fraction of trees that must agree on a call for that event to be labeled by the classififer. This is experimental.
+        Between 0 and 1, the minimum proportion of trees that must agree on a call for that event to be labeled by the classifier. This is experimental.
     features_limit
         A list of str specifying features to limit to, in the format [feature_name]_mod_[modality], e.g. 
     skip_to
@@ -261,13 +262,13 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         The order of levels corresponds to the order they are defined in the hierarchy. Requires that the AnnData object has a predefined .obsm[key_added]. If
         skip_to is defined, it replaces only the columns that occur at and beyond that level.
     reference
-        Column in the adata.obs to be used for comparing (in the log file) the results of high confidence thresholding to predetermined annotations or clusters
+        Column in the adata.obs to be used for comparing (in the log file) the results of high-confidence thresholding to predetermined annotations or clusters
         
     Returns
     -------
     adata: AnnData object
-        Object containing a .obsm[key_added] containing columns corresponding to the classification high confidence ("_hc"), the held out data not used for testing ("_held_out"), the 
-        prediction ("_class") for each level. If proba_suffix is defined, also contains "_proba" keys in the .uns corresponding to the prediction probabilities
+        Object containing a .obsm[key_added] containing columns corresponding to the classification high-confidence ("_hc"), the held out data not used for testing ("_held_out"), the 
+        prediction ("_class") for each level. If probababilities_suffix is defined, also contains "_probabilities" keys in the .uns corresponding to the prediction probabilities
         of each class for each event.
     Hierarchy: Hierarchy object
         A trained hierarchy with classifiers built into it and a record of thresholds and other settings used. 
@@ -293,13 +294,13 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         logg.warning(f'Skipped to classification on {skip_to}')
         for classification in classifications:
             adata.obsm[key_added].drop([classification+"_class",classification+"_hc",classification+"_held_out",
-                                        classification+"_proba",classification+"_train",classification+"_tcounts"],
+                                        classification+"_probability",classification+"_train",classification+"_traincounts"],
                                         axis=1, inplace=True, errors='ignore')
     if not end_at is None:
         classifications = classifications[:classifications.index(end_at)+1]
             
-    total_adata, total_X = adata, X
-    total_adata_obs_names = total_adata.obs_names
+    total_adata, total_X = adata, X    
+    total_adata.obs['MMoCHi_obs_names'] = total_adata.obs_names
     total_adata.obs_names = range(0,len(total_adata))    
     total_adata.obs_names = total_adata.obs_names.astype(str)
 
@@ -320,20 +321,20 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
             logg.print("Data subsetted on "+ parent+' in '+ gparent) 
             
             if retrain or not hierarchy.has_clf(level):
-                logg.print(f'Running high confidence populations for {level}...')         
+                logg.print(f'Running high-confidence populations for {level}...')         
                 hc_dfs, hc_batches = [], []
                 for batch_mask, batch in zip(batch_masks, batches):
                     adata = subset_adata[batch_mask[subset_mask]]
                     if not batch_key is None:
-                        logg.info(f'Running high confidence thresholds in {batch}')
+                        logg.info(f'Running high-confidence thresholds in {batch}')
                     if len(adata) > 0:
                         df = hc_threshold(adata,hierarchy,level,data_key,reference=reference,
                                           batch=batch,plot=plot_thresholds)
                         hc_dfs.append(df)
                         hc_batches.append(batch)
-                        logg.debug(f"High confidence thresholding on {len(df)} events")
+                        logg.debug(f"high-confidence thresholding on {len(df)} events")
                     else:
-                        logg.info(f'No events in subsetted adata, skipping high confidence thresholding')
+                        logg.info(f'No events in subsetted adata, skipping high-confidence thresholding')
                     del adata
                     gc.collect()
 
@@ -459,7 +460,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     
                     train_df.reset_index(inplace=True)
                     train_df = train_df.groupby(['index']).sum()
-                    df[level+'_tcounts'] = train_df['training'].astype(int)
+                    df[level+'_traincounts'] = train_df['training'].astype(int)
                     df[level+'_train'] = train_df['training'].astype(bool)
                     del train_df                
                     df[level+'_holdout'] = (df[level+'_holdout']) #& (df[level+'_hc'] != '?')
@@ -496,6 +497,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         
                         cal_clf.fit(X_calibration, y_calibration)
                         hierarchy.set_clf(level,cal_clf,features_used)
+                        del X_calibration
                         
             if not hierarchy.get_info(level,'is_cutoff'):
                 df = pd.DataFrame(index=subset_adata.obs_names)
@@ -505,11 +507,11 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                 clf,f_names = hierarchy.get_clf(level)
                 subset_X, features_used = _limit_and_realign_features(subset_X, features_used, f_names, True)
                 assert list(f_names) == list(features_used), 'Order of f_names and features_used not matching. Aborting...'
-                full_proba, df[level+proba_suffix], df[level+'_class'] = _predict_proba_cutoff(subset_X, clf, probability_cutoff)
+                full_probabilities, df[level+'_probability'], df[level+'_class'] = _predict_probabilities_cutoff(subset_X, clf, probability_cutoff)
 
-                if not proba_suffix is None:
-                    total_adata.uns[level+proba_suffix] = pd.DataFrame(full_proba,
-                                                                       index=np.array(total_adata_obs_names)[df.index.astype(int)],columns=clf.classes_)
+                if not probabilities_suffix is None:
+                    total_adata.uns[level+probabilities_suffix] = pd.DataFrame(full_probabilities,
+                                                                       index=np.array(total_adata.obs['MMoCHi_obs_names'])[df.index.astype(int)],columns=clf.classes_)
 
                 logg.print(f"Merging data into adata.obsm['{key_added}']")
                 total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
@@ -527,6 +529,8 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
             if DEBUG_ERRORS:
                 assert False
         # Attempt to convert to categories and bools to simplify
+        
+    del total_X
     cols = total_adata.obsm[key_added].columns
     try:
         logg.info(f'Converting columns in adata.obsm["{key_added}"] to savable dtypes...')
@@ -534,26 +538,26 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         total_adata.obsm[key_added][cols[cols.str.contains('_class')]].astype(str).astype('category')
         total_adata.obsm[key_added][cols[cols.str.contains('_hc')]] = \
         total_adata.obsm[key_added][cols[cols.str.contains('_hc')]].astype(str).astype('category')
-        # if len(total_adata.obsm[key_added].loc[total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')].isna()]) > 0:
+
         total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')] = \
         total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')].fillna(False)
         total_adata.obsm[key_added][cols[cols.str.contains('_holdout')]] = \
         total_adata.obsm[key_added][cols[cols.str.contains('_holdout')]].astype(bool)
 
-        # if len(total_adata.obsm[key_added].loc[total_adata.obsm[key_added].loc[:,cols.str.contains('_train')].isna()]) > 0:
         total_adata.obsm[key_added].loc[:,cols.str.contains('_train')] = \
         total_adata.obsm[key_added].loc[:,cols.str.contains('_train')].fillna(False)
         total_adata.obsm[key_added][cols[cols.str.contains('_train')]] = \
         total_adata.obsm[key_added][cols[cols.str.contains('_train')]].astype(bool)
-        total_adata.obsm[key_added][cols[cols.str.contains('_tcounts')]] = \
-        total_adata.obsm[key_added][cols[cols.str.contains('_tcounts')]].astype(float)
+        total_adata.obsm[key_added][cols[cols.str.contains('_traincounts')]] = \
+        total_adata.obsm[key_added][cols[cols.str.contains('_traincounts')]].astype(float)
     except Exception as e:
         logg.error(f'Error converting adata.obsm[{key_added}] contents to savable categories',exc_info=1)
-    total_adata.obs_names = total_adata_obs_names
+    total_adata.obs_names = total_adata.obs['MMoCHi_obs_names']
+    total_adata.obs.drop(columns='MMoCHi_obs_names', inplace=True)
     gc.collect()
     return total_adata,hierarchy
 
-def _predict_proba_cutoff(X: sp.csr_matrix, clf,
+def _predict_probabilities_cutoff(X: sp.csr_matrix, clf,
                          probability_cutoff: float=0) -> Tuple[np.array, np.array, np.array]: 
     """
     Predict using the classifier, using the probability cutoff as described. Replace predictions with a ? if they do not match the cutoff.
@@ -569,14 +573,14 @@ def _predict_proba_cutoff(X: sp.csr_matrix, clf,
         
     Returns
     -------
-    full_proba: np.array
+    full_probabilities: np.array
         n_classes x n_events array of the probabilities of each class for each event
-    proba: np.array
+    probability: np.array
         a 1 x n_events array of the probability used for each cell call. 
     predictions: np.array
         a 1 x n_events array of str, designating the class called for each group.
     """
-    # predict_proba does not function with int64 encoded sparse matrix indicies (caused by large datasets)
+    # predict_proba does not function with int64 encoded sparse matrix indices (caused by large datasets)
     if X.indices.dtype == np.int64:
         int_max = np.iinfo(np.int32).max
         batches = list()
@@ -587,35 +591,37 @@ def _predict_proba_cutoff(X: sp.csr_matrix, clf,
     else:
         batches = [X]
         
-    full_proba = list()
+    full_probabilities = list()
     for i in batches:
-        proba = clf.predict_proba(i)
-        full_proba.append(proba)
+        probability = clf.predict_proba(i)
+        full_probabilities.append(probability)
 
-    full_proba = np.vstack(full_proba)
+    full_probabilities = np.vstack(full_probabilities)
     
-    proba = full_proba
-    n_samples = proba.shape[0]
+    probabilities = full_probabilities
+    n_samples = probabilities.shape[0]
     class_type = clf.classes_.dtype    # all dtypes should be the same, so just take the first
     predictions = np.empty(n_samples, dtype=class_type)
 
     for k in range(n_samples):
-        predictions[k] = clf.classes_[np.argmax(proba[k])]
+        predictions[k] = clf.classes_[np.argmax(probabilities[k])]
 
-    proba = np.max(proba,axis=1)
+    probabilities = np.max(probabilities,axis=1)
 
-    for i,prob in enumerate(proba):
+    for i,prob in enumerate(probabilities):
         if prob < probability_cutoff:
             predictions[i] = "?"
-    return full_proba, proba, predictions
+    return full_probabilities, probabilities, predictions
         
 def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                  level: str, data_key: Optional[str]=utils.DATA_KEY, 
                  plot: bool=False, reference: Optional[str]=None,
                  batch: Optional[str]=None, log_reference: bool=True) -> pd.DataFrame:
     """
-    Performs high confidence thresholding using the subset defintions defined in one level of a MMoCHi hierarchy. 
-    Note: This function relies on `mmc.utils.get_data()` for extracting expression information from the adata object. Thus, for each marker it will first search for matching proteins, then genes, and finally the .obs for matching feature names. If '_gex' or '_obs' are appended to the marker name, this priority order Swill be bypassed. 
+    Performs high-confidence thresholding using the subset definitions defined in one level of a MMoCHi hierarchy. 
+    Note: This function relies on `mmc.utils.get_data()` for extracting expression information from the adata object. Thus, for each marker it will first
+    search for matching proteins, then genes, and finally the .obs for matching feature names. If '_gex' or '_obs' are appended to the marker name, this 
+    priority order will be bypassed. 
 
     
     Parameters
@@ -625,9 +631,9 @@ def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     hierarchy: Hierarchy object 
         Specifies one or more classification levels and subsets.
     level: str
-        Name of a classification level in the hierarchy to threshold and high confidence threshold on
+        Name of a classification level in the hierarchy to threshold and high-confidence threshold on
     data_key: str
-        Key in adata.obsm to be used for high confidence thresholding
+        Key in adata.obsm to be used for high-confidence thresholding
     plot: bool
         Passed to thresholding.threshold, whether to display histograms of thresholds
     reference: optional, str
@@ -635,12 +641,12 @@ def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     batch: optional, str
         Name of a column in adata.obs that corresponds to a batch for use in the classifier   
     log_reference: bool
-        If true, logs high confidence thresholding information
+        If true, logs high-confidence thresholding information
         
     Returns
     -------
     templin: pandas.DataFrame
-        Dataframe of high confidence calls for which classification an event falls into for the specified level of the hierarchy
+        Dataframe of high-confidence calls for which classification an event falls into for the specified level of the hierarchy
     """
     # Get necessary information
     markers,values = hierarchy.classification_markers(level)
@@ -694,11 +700,11 @@ def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     if not reference is None:
         df = pd.crosstab(templin[level+'_hc'],adata.obs[reference]).T
         if log_reference:
-            logg.debug('high confidence populations calculated...')
+            logg.debug('high-confidence populations calculated...')
             logg.debug(f"\n{templin[level+'_hc'].value_counts()}")
             logg.debug('\n{}'.format(df.to_string()))
         else:
-            logg.print('high confidence populations calculated...')
+            logg.print('high-confidence populations calculated...')
             logg.print(templin[level+'_hc'].value_counts())
             logg.print(df)
     
@@ -715,12 +721,12 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
     ----------
     X: sparse matrix
         Subset of matrix of features to subset into training data
-    templin: pandas dataframe
-        Dataframe of high confidence calls for which classification an event falls into for the specified level of the hierarchy
+    templin: pandas DataFrame
+        Dataframe of high-confidence calls for which classification an event falls into for the specified level of the hierarchy
     level: str
         Name of a classification level in the hierarchy to threshold and hc_threshold on
     resample_method: optional, str
-        Methods to balance classes, using the imblearn package. Consult their documentation for more details
+        Method used to resample high-confidence data prior to training, passed to _balance_training_classes. "Oversample" or None. Other methods are experimental. See _balance_training_classes and the imblearn package for details.
     max_training: optional, int
         If amount of training data is greater than max_training, a subset of the training data is randomly chosen to be used
     in_danger_noise_checker: bool or str
@@ -735,7 +741,7 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
     y: np.array()
         Resampled classifications for use in training, corresponding to rows in X
     """
-    logg.print('Choosing training data...') # Randomly select high confidence dataset for training purposes...80% train, 20% held out
+    logg.print('Choosing training data...') # Randomly select high-confidence dataset for training purposes...80% train, 20% held out
     templin[level+'_holdout'] = True
     mask = np.random.choice([False,False,False,False,True],size=sum(templin[level+'_hc'] != '?'))
     templin.loc[templin[level+'_hc'] != '?',level+'_holdout'] = mask
@@ -766,7 +772,7 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
 def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_matrix],
                   obs_names: List[str]) -> pd.DataFrame:
     """
-    Finds number of duplicates of each cell in training data and creates a dataframe of
+    Finds number of duplicates of each cell in training data and creates a DataFrame of
     the names from X as indices and the number of that cell as the values
     
     https://stackoverflow.com/questions/13982804/find-given-row-in-a-scipy-sparse-matrix
@@ -780,11 +786,11 @@ def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_ma
     training_X: Sparse matrix or AnnData object
         AnnData.X, subset of X, which is also a sparse matrix, duplicate cells allowed
     obs_names: list of str
-        Labels for X object, which are used and indicies of outputted dataframe
+        Labels for X object, which are used and indices of outputted DataFrame
         
     Returns
     -------
-    df: pandas dataframe
+    df: pandas DataFrame
         Indices are the obs_names and the values are the number of that cell in the training data
     """
     r = range(1,X.shape[1] + 1)
@@ -813,7 +819,7 @@ def _in_danger_noise(nn_estimator, samples: List[Tuple[anndata.AnnData, sp.csr_m
     target_class : int or str
         The target corresponding class being over-sampled
     y : array-like of shape (n_samples,)
-        The true label in order to check the neighbour labels
+        The true label in order to check the neighbor labels
         
     Returns
     -------
@@ -906,8 +912,7 @@ class _HVF_PCA_Neighbors():
             sc.tl.leiden(adata,resolution = .5,n_iterations=1)
             if len(adata.obs.leiden.unique()) > min(10,len(adata)/100):
                 sc.tl.leiden(adata,resolution = .25,n_iterations=1)
-            # sc.tl.umap(adata)
-            # sc.pl.umap(adata,color=['leiden'])
+
             self.leiden = adata.obs.leiden.values
         return self.leiden
     def get_params(self,**kwargs):
@@ -922,13 +927,13 @@ def _borderline_balance(nn_estimator, X: sp.csr_matrix,
     Parameters
     ----------
     nn_estimator
-        nearest neighbor clustering estimator, must have .cluster method
+        nearest neighbor clustering estimator, must have cluster method
     X
         .X column that references the same AnnData object as Y
     y
         Data to cluster
     min_cluster_size
-        Minimum fraction of all classes that a cluster must contain
+        Minimum proportion of all classes that a cluster must contain
     
     Returns
     -------
@@ -979,7 +984,7 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
     features_used: Listlike of str
         List of features that were checked/used in the reduction process 
     method: str, possible methods: "undersample", 'resample', 'oversample', 'SMOTE', 'KMeansSMOTE', 'BorderlineSMOTE' ,None
-        Method used to balance training classes (over or undersampling)
+        Method used to balance training classes (over or undersampling). See imblearn for details.
     max_training: int
         Maximum length of y data to be used in training, if len(y) > max_training will randomly subsample x and y
     in_danger_noise_checker: bool or str, if str can include "danger", "noise", or both
@@ -1032,7 +1037,7 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
     if method == "oversample":
         sample = imblearn.over_sampling.RandomOverSampler()
     elif method == "resample":
-        sample = imblearn.under_sampling.OneSidedSelection()#(sampling_strategy = dic)
+        sample = imblearn.under_sampling.OneSidedSelection()
     elif method == "undersample":
         sample = imblearn.under_sampling.RandomUnderSampler()
     elif method == "SMOTE":
@@ -1048,7 +1053,7 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
     return X,y
 
 def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
-                   confidence_column: str='conf', conf_drops: Union[float, List[float]]=None,
+                   confidence_column: str='certainty', conf_drops: Union[float, List[float]]=None,
                    key_added: str='lin', voting_reference: str = None, 
                    majority_min: float=.9) -> anndata.AnnData:
     """
@@ -1060,9 +1065,9 @@ def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
     adata: AnnData object 
         Object containing gene expression data, and expression data for modalities for every data key in .obsm
     obs_column: str
-        Column in the .obs to add to the andata containing the classification 
+        Column in the .obs to add to the AnnData containing the classification 
     confidence_column: str
-        Column in the .obs to add to the andata containing the percent of trees in agreement with the classification 
+        Column in the .obs to add to the AnnData containing the percent of trees in agreement with the classification 
     conf_drops: float or listlike of float
         Maximum percent of confidence-loss between levels of the hierarchy before an event should be terminated at an earlier subset
     key_added: str
@@ -1070,7 +1075,7 @@ def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
     voting_reference: str
         Column in the .obs corresponding to leiden clusters or overclusters for use in the voting function (if majority voting)
     majority_min: float [0,1]
-        Fraction of events within an individal voting group that must agree for that voted identity to override all memebers of that voting group
+        Proportion of events within an individual voting group that must agree for that voted identity to override all members of that voting group
     
     Returns 
     -------
@@ -1082,12 +1087,12 @@ def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
     names_matrix = adata.obsm[key_added].loc[:,class_names].astype(str)
     names_matrix.columns = [i.split('_class')[0] for i in names_matrix.columns]
     # ID confidence columns
-    conf_names = [x for x in adata.obsm[key_added].columns if "_proba" in x]
+    conf_names = [x for x in adata.obsm[key_added].columns if "_probability" in x]
     # Match column names
     conf_matrix = pd.DataFrame(columns = names_matrix.columns, index = names_matrix.index)
-    proba_matrix = adata.obsm[key_added].loc[:,conf_names]
-    proba_matrix.columns = [i.split('_proba')[0] for i in proba_matrix.columns]
-    conf_matrix = conf_matrix.fillna(proba_matrix)
+    probability_matrix = adata.obsm[key_added].loc[:,conf_names]
+    probability_matrix.columns = [i.split('_probability')[0] for i in probability_matrix.columns]
+    conf_matrix = conf_matrix.fillna(probability_matrix)
     conf_matrix = conf_matrix.fillna(1)
     conf_matrix[(names_matrix.isna()) | (names_matrix == 'nan')] = np.nan
     
@@ -1106,14 +1111,12 @@ def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
     confidences.name = None
     blacklisted = conf_matrix.iloc[:,0].copy() < 0
     blacklisted.name = None
-    # return labels, confidences,blacklisted, conf_matrix, names_matrix
+
     for col, conf_drop in zip(names_matrix.columns,conf_drops):
         mask = conf_matrix.loc[:,col].copy()
         mask.loc[blacklisted] = -1
-        # mask.loc[names_matrix.loc[:,col].isna()] = np.nan
+
         mask.name = None
-        # if col == 'cd4cd8':
-        #     return labels, mask, conf_drop, names_matrix, col, conf_matrix, confidences, blacklisted
         labels.loc[mask>conf_drop] = names_matrix.loc[mask>conf_drop,col]
         confidences.loc[mask>conf_drop] = conf_matrix.loc[mask>conf_drop,col]
         blacklisted.loc[mask<conf_drop] = True
@@ -1232,7 +1235,7 @@ def identify_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
             ups,downs = df.head(n_ups).names.to_list(), df.tail(n_downs).names.to_list()
         else:
             ups,downs = df.names.to_list(), []
-        sc.pl.umap(adata[batch_mask], color=[key_added]+ups+downs, cmap='jet', s=10,ncols=6)
+        sc.pl.umap(adata[batch_mask].copy(), color=[key_added]+ups+downs, cmap='jet', s=10,ncols=6)
         gc.collect()
     
     if return_df:

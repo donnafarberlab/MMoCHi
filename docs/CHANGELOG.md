@@ -16,6 +16,33 @@ pip install .
 ---
 ## Current version
 
+### [0.2.1] - 17JUN23
+
+#### Added
+
+- Functionality to restore `adata.obs_names` if `mmc.classify` is interrupted. 
+    - Internally, `mmc.classify` converts `adata.obs_names` to indicies, and remaps them at the end of the function.
+    - Now, `adata.obs_names` can be restored from the temporary column: `adata.obs[‘MMoCHi_obs_names’]`
+    
+- New option for `mmc.density_plot` whether to hide events with 0 expression (default: True)
+
+#### Changed
+
+- Nomenclature changed for columns in the `.obsm`: the `'_tcounts'`  to `'_traincounts'`, `'_proba'` to `'_probability'` or `'_probabilities'` (in `.uns`), `'conf'` default column name to `'certainty'` (in the `.obs`). Note that although MMoCHi functions will not support this old format, previously generated classifications can be renamed to match this new format.
+
+- Default log-normalization in preprocess_adatas changed for GEX to counts per 10k and ADT to counts per 1k
+
+- Updated tutorials, doctstrings, README, and input_output_specs for clarity
+
+#### Fixed
+
+- Removed `leidenalg` from `requirements.txt` to prevent conda install from hanging while trying to solve the environment
+
+- Bug handling `np.nan` in `mmc.utils.umap_interrogate_level`
+
+- Disabled some internal warnings in `mmc.utils`
+
+
 ### [0.2.0] - 26MAY23
 
 #### Added
@@ -70,9 +97,6 @@ pip install .
 
 - Removed `optional-requirements.txt`. All mandatory requirements are now listed in `requirements.txt`
 
----
-
-## Past versions
 
 ### [0.1.4] - 09MAR23
 
@@ -97,6 +121,9 @@ pip install .
 
 - Added support for recent versions of scikit-fda, which should include support for the current version: `skfda==0.8.1`. 
 
+---
+
+## Past versions
 
 ### [0.1.3] - 22Dec22
 

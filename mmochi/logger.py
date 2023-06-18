@@ -95,7 +95,7 @@ def log_to_file(file_name, file_mode='w'):
     file_name
         The file path and file name (without a ".log" suffix) detailing where a log file should be saved.
     file_mode
-        Etiher "w" to overwrite a preexisting file, or "a" to append logs to a preexisting file. 
+        Either "w" to overwrite a preexisting file, or "a" to append logs to a preexisting file. 
     '''
     fileHandler = logging.FileHandler(f'{file_name}.log',mode=file_mode)
     fileHandler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
