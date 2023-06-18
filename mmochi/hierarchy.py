@@ -455,7 +455,7 @@ class Hierarchy:
             The list of definitions for each subset
         '''
         markers = self.tree[name].data.markers
-        hc_subsets = Subsets_info(name)
+        hc_subsets = self.subsets_info(name)
         return markers,hc_subsets
     
     def set_clf(self, name: str, clf, feature_names: List[str]):
@@ -852,7 +852,7 @@ class Hierarchy:
         '''
         all_markers = []
         for name in self.get_classifications():
-            all_markers.extend(Classification_markers(name)[0])
+            all_markers.extend(self.classification_markers(name)[0])
         return set(all_markers)
 
     def check_all_markers(self, adata: anndata.AnnData, data_key: Optional[str]=utils.DATA_KEY):
