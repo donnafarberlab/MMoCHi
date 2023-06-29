@@ -32,7 +32,7 @@ repository_url = "https://github.com/donnafarberlab/MMoCHi"
 
 # version = mmochi.__version__
 # release = version
-release = '0.2.1'
+release = '0.2.2'
 
 # -- General configuration ---------------------------------------------------
 
