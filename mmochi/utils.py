@@ -272,12 +272,8 @@ def marker(adata: anndata.AnnData, parameter: Union[str, List[str]],
         
     Returns 
     -------
-    if allow_multiples 
-        marker_names
-            Names of the marker in the adata object
-    else 
         marker_name
-            Name of the marker in the adata object
+            Name(s) of the marker in the adata object
     '''
     
     if not data_key is None:
@@ -307,10 +303,12 @@ def umap_thresh(adata: anndata.AnnData, h,
     Parameters
     ----------
     adata
+        Object with .obsm['X_umap'] with UMAP representation and thresholds to color the umap
     h
+        hierarchy object to draw classification markers from
     markers
         Markers to create UMAPs for
-        If None (default), creates UMAP for all markers 
+        If None (default), creates UMAP for all markers in h
     batch_key
         Name of batch in adata to use for UMAP, uses batch_iterator to find key
     data_key
@@ -376,7 +374,7 @@ def umap_interrogate_level(adata: anndata.AnnData, level: str, batch_key: str=No
                             key_added: str='lin', umap_basis: str='X_umap',
                             cmap: Optional[List[str]] =None,**kwargs):
     '''
-    Plots UMAPs showing events selected by high-confidence thresholding and used for training and breaks down annotation confusion onto the UMAP.
+    Plots UMAPs showing events selected by high-confidence thresholding and used for training and breaks down annotation confusion onto the UMAP. X_umap must be generated before running this function.
         
     Parameters
     ----------

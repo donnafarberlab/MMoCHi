@@ -5,6 +5,8 @@ import treelib
 import pickle
 import gc
 import re
+import sklearn.base
+import sklearn.ensemble
 import sklearn.calibration
 from typing import Union, Optional, Sequence, Any, Mapping, List, Tuple, Callable, List, Set, Dict
 import anndata
@@ -16,10 +18,10 @@ from . import thresholding
 class Hierarchy:
     '''
     Class to organize a MMoCHi hierarchy. The Hierarchy is a tree with alternating subset and classification nodes for progressively annotating 
-    cell types. Subset nodes define cell populations and the Hierarchy is initialized a root Subset "All", representing all events in the dataset. 
+    cell types. Subset nodes define cell populations and the Hierarchy is initialized with a root Subset "All", representing all events in the dataset. 
     All other Subsets originate from a Classification node. Classification nodes are defined with a list of markers (for high-confidence labeling), 
     and normally trigger selection of high-confidence events, training of a random forest classifier, and prediction. If a classification node is a 
-    cutoff, it will only trigger a selection of high-confidence events, and those events will be carried forward. Subset nodes will also contain
+    cutoff, it will only trigger a selection of high-confidence events, and only those events will be cast into subsets. Subset nodes also contain
     the cell type definitions used for high-confidence thresholding. 
     
     Initializing the Hierarchy, you can also define many classification defaults, which can be additionally customized for each Classification node. 
@@ -27,20 +29,20 @@ class Hierarchy:
     Parameters
     ---------
     default_min_events
-        The default minimum number of (or proportion of total) high-confidence events that must be identified for in order to train a random forest
+        The default minimum number of (or proportion of total) high-confidence events that must be identified in order to train a random forest
         classifier with each Subset. If not enough events are identified, that Subset will be skipped.
     default_class_weight
         The default class_weight strategy for handling scoring. This is passed to sklearn.ensemble.RandomForestClassifier.
     default_clf_kwargs
         The default keyword arguments for classification. For more information about other kwargs that can be set, please see: 
-        sklearn.ensemble.RandomForestClassifier In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees 
-        in the forest.    
+        sklearn.ensemble.RandomForestClassifier. In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees 
+        in each forest.    
     default_in_danger_noise_checker
         The default for whether to check for (and amplify or remove, respectively) in danger and noise events. In danger events are high-confidence 
         events at classification boundaries. Events labeled noise are high-confidence events whose nearest neighbors do not share the same label, 
         and are thus likely mislabeled. Can be a boolean, or "in danger only"/"noise only".
     default_is_cutoff
-        The default for whether Classification nodes should be treated as a cutoff (triggering only high-confidence thresholding).
+        Whether Classification nodes should be treated as a cutoff by default (triggering only high-confidence thresholding) or non-cutoff (where a random forest is trained and all events are classified).
     default_features_limit
         Listlike of str or dictionary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
         Specifies the default features allowed for training the classifier.
@@ -51,16 +53,16 @@ class Hierarchy:
         have enough events for training. This can be useful for cell types that are very heterogenous across batches.
     default_calibrate
         Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect 
-        the % of trees in agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level.
+        the percent of trees in agreement. Calibrated values more-closely reflect the percent of calls correctly made at any given confidence level.
     load
-        Either None (to initiate a new hierarchy) or a path to a hierarchy to load. Note that loading a hierarchy overrides all other defaults.
+        Either None (to initiate a new hierarchy) or a path to a hierarchy to load (exclude .hierarchy in the path). Note that loading a hierarchy overrides all other defaults.
     '''
     def __init__(self, default_min_events: Union[int,float]=0.001,
-                       default_class_weight: str='balanced_subsample', 
+                       default_class_weight: Union[str, dict, List[dict]]='balanced_subsample', 
                        default_clf_kwargs: dict=dict(max_depth=20, n_estimators=100,
                                                       n_jobs=-1,bootstrap=True,verbose=True),
                        default_in_danger_noise_checker: Union[str,bool]=True, 
-                       default_is_cutoff: bool=False, 
+                       default_is_cutoff: Union[bool,str]=False, 
                        default_features_limit: Optional[Union[List[str],Dict[str,List[str]]]]=None,
                        default_max_training: int=20000,
                        default_force_spike_ins: List[str]=[], 
@@ -136,9 +138,9 @@ class Hierarchy:
         markers
             The features that will be used for high-confidence thresholding to define subsets beneath this classification. During thresholding, 
             matching or similar feature names are looked up first in the provided data_key, then in the .var. See mmc.utils.marker for details 
-            on how lookup can be specified.
+            on marker lookup.
         is_cutoff
-            Whether to be a cutoff or a classifier. If None, reference the default.
+            Whether to be a cutoff or a classifier. If None, uses the default.
         **kwargs
             arguments to pass to Classification class constructor
         '''
@@ -156,7 +158,7 @@ class Hierarchy:
                    values: Union[List[str], List[List[str]], Dict[str,str]], 
                    color: str='#FFFFFF', **kwargs):
         '''
-        Add a Subset beneath a Classification. Checks if it is correctly positioned in the tree before adding.
+        Add a Subset beneath a Classification node. Checks if it is correctly positioned in the tree before adding.
         
         Parameters
         ----------
@@ -328,7 +330,7 @@ class Hierarchy:
         '''
         Flattens child nodes of the hierarchy. The direct child classification information is moved to the same layer as the parent and their 
         parent classification is dissolved. If parents and children have conflicting definitions, edge-case behavior may lead to the generation 
-        of nodes with duplicate markers (which is otherwise prevented) but should still function. This should be done before setting thresholds.
+        of nodes with duplicate markers (which is otherwise prevented) but should still function. This should be done before setting thresholds. Only immediate chiild layer will be dissolved and gradchildren will become children.
         
         Parameters
         ----------
@@ -392,7 +394,7 @@ class Hierarchy:
 
     def get_classifications(self) -> List[str]:
         '''
-        Provides all a list of all classification (or cutoff) nodes in the tree.
+        Provides a list of all classification (or cutoff) nodes in the hierarchy.
         '''
         nodes = []
         for node in self.tree.nodes.values():
@@ -420,7 +422,7 @@ class Hierarchy:
         
     def classification_parents(self, name: str) -> Tuple[str,str]:
         '''
-        Provides the names of a node's parent and grandparent. This can be useful for subsetting.
+        Provides the names of a node's parent and grandparent. This can be useful for subsetting. If no grandparent exists, parent will be returned twice.
         
         Parameters
         ----------
@@ -456,9 +458,9 @@ class Hierarchy:
         '''
         markers = self.tree[name].data.markers
         hc_subsets = self.subsets_info(name)
-        return markers,hc_subsets
+        return markers, hc_subsets
     
-    def set_clf(self, name: str, clf, feature_names: List[str]):
+    def set_clf(self, name: str, clf: sklearn.ensemble.RandomForestClassifier, feature_names: List[str]):
         '''
         Stores a trained classifier and a list of features used for training of a specified classification level.
         
@@ -480,7 +482,7 @@ class Hierarchy:
     
     def has_clf(self, name: str) -> bool:
         '''
-        Checks whether a given node has a trained classifier defined.
+        Checks whether a given node has a trained classifier defined. Note, all cutoff layers will return false.
         
         Parameters
         ----------
@@ -488,14 +490,14 @@ class Hierarchy:
             The name of the classification node to query
         Returns
         -------
-        A boolean for whether the node has a classifier defined.             
+        Whether the node has a trained classifier defined.             
         '''
         assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
         if self.tree[name].data.is_cutoff:
             return False
         return not self.tree[name].data.classifier is None
     
-    def get_clf(self, name: str, base: bool=False):
+    def get_clf(self, name: str, base: bool=False) -> Tuple[Union[sklearn.ensemble.RandomForestClassifier, sklearn.base.BaseEstimator], List[str]]:
         '''
         Gets the classifier and feature names of a given node. If base, returns base estimator 
         
@@ -508,7 +510,7 @@ class Hierarchy:
             
         Returns
         -------
-        A boolean for whether the node has a classifier defined.            
+        Either a random forest classifier or its base estimator and a list of features used in classification.            
         '''
         assert type(self.tree[name].data) is Classification, name+" is not a classification layer"
         clf = self.tree[name].data.classifier
@@ -525,7 +527,7 @@ class Hierarchy:
     
     def reset_thresholds(self):
         '''
-        Creates an empty thresholds DataFrame
+        Removes all thresholds from thresholds DataFrame.
         '''
         self.thresholds = pd.DataFrame(columns=['minimum','maximum','interactive'])
         self.thresholds.index=pd.MultiIndex.from_frame(pd.DataFrame(columns=['marker','name','batch']))
@@ -541,7 +543,7 @@ class Hierarchy:
         marker
             Marker to set threshold on
         thresholds
-            List of thresholds to use for that node
+            List of thresholds (pos and neg) to use for that node
         interactive
             Whether to interactively set thresholds
         name
@@ -569,7 +571,7 @@ class Hierarchy:
     
     def batchless_thresholds(self, name: str=None, batch: str=None):
         '''
-        Sets thresholds, removing any that are batch-specific, and averages those across batches
+        Sets thresholds, removing any that are batch-specific, and setting the threshold to the average threshold across batches
         
         Parameters
         ----------
@@ -589,13 +591,13 @@ class Hierarchy:
     
     def drop_threshold(self, marker: str, name: Optional[str]=None, batch: Optional[str]=None):
         '''
-        Remove thresholds from the database. Pass slice(None) to drop all thresholds matching the other keys.
+        Remove thresholds from the database. Pass slice(None)to drop all thresholds matching the other batches (batch) or classification layers (name).
         
 
         Parameters
         ----------
         marker
-            Marker to drop thresholds on.
+            Marker to remove thresholds for.
         name
             Name of the classification layer to remove thresholds for. Use slice(None) for all.
         batch
@@ -619,7 +621,7 @@ class Hierarchy:
                            batch: str=None, flexible_level: bool=True,
                            flexible_batch: bool=True) -> Tuple[bool, Tuple[float, float]]:
         '''
-        Identifies and returns threshold information, with support for flexibly for level or batch. 
+        Identifies and returns threshold information, with support for searching all levels or batches if specified location lacks information. 
         
         Parameters
         ----------
@@ -709,7 +711,7 @@ class Hierarchy:
         Parameters
         ----------
         df
-            A reference to a DataFrame with columns for marker, name, batch, maximum, minimum, and interactive
+            A reference to a DataFrame with columns for marker (str), name (str), batch (str), maximum (float), minimum (float), and interactive (bool)
             This should be the exact number of columns. 
         verbose
             Whether to print log messages during loading.
@@ -736,8 +738,8 @@ class Hierarchy:
                            plot: bool=True, limit: Optional[Union[str, List[str]]]=None, 
                            batch_marker_order: bool=False, skip: List[str]=[]):
         '''
-        Run thresholding using the `thresholding.threshold()` function. First uses `mmc.get_data` to search for marker.
-        If marker is not found, gives up and ask whether to label it as interactive or not.
+        Runs thresholding using the `thresholding.threshold()` function. First uses `mmc.get_data` to search for marker.
+        If marker is not found in AnnData, gives up and ask whether to label it as interactive or not.
         
         Parameters
         ----------
@@ -749,7 +751,7 @@ class Hierarchy:
             If none, don't run with batch. Otherwise, the batch on which to threshold 
         mode
             One of: ['fill in','rerun all', 'rerun specified','every level'] 
-            Whether to fill in empty holes with broad thresholds, rerun all globals, rerun all thresholds that have been
+            Whether to only fill in unspecified thresholds, rerun all thresholds, rerun all thresholds that have been
             specified (and not fill in new ones), or rerun every level separately. Add "fancy" to the mode name to trigger
             fancy plots (interactive widgets).
         interactive
@@ -857,7 +859,7 @@ class Hierarchy:
 
     def check_all_markers(self, adata: anndata.AnnData, data_key: Optional[str]=utils.DATA_KEY):
         '''
-        Asserts all markers identified by `.get_all_markers()` are in adata.X or .obsm[data_key].
+        Asserts all markers in hierarchy identified by `.get_all_markers()` are in adata.X or .obsm[data_key].
         
         Parameters
         ----------
@@ -889,9 +891,9 @@ class Hierarchy:
            True replaces the hierarchy color system with a new cubehelix palette
         mode
            One of ["ZIGZAG", "WIDTH", "DEPTH"]
-           The order to label the tree
+           The order to label the tree. If "LEAF" in mode, only create color dict for leaf nodes
         default_color
-           Hex code of the color default, for any subsets not already defined in the color palette.
+           Hex code of the color default, for any subsets not already defined in the color palette
         **kwargs
            Sent to sns.cubehelix_palette, a hue of > 1, and a rot >= 1 is recommended
            
@@ -947,14 +949,14 @@ class Hierarchy:
                 node_width: int=4, node_height: int=1, 
                 font_mult: float=1):
         """
-        Display the tree in a user-friendly format.
+        Display the hierarchy in a user-friendly format.
         
         Parameters
         ----------
         plot
             Whether to display as a plot (True) or as text (False) 
         return_graph
-            Whether to return the graph object (when plot = True)
+            Whether to return the graph object (if plot = True)
         supress_labels
             Whether to not display the high-confidence thresholding rules used to identify subsets
         node_width
@@ -987,12 +989,12 @@ class Hierarchy:
                     node_width: int=4, node_height: int=1,
                     font_mult: float=1) -> str:
         """
-        Exports the tree in the dot format of the graphviz software, useful for plotting.
+        Exports the tree in the dot format of the graphviz software, which can be useful for plotting.
         
         Parameters
         ----------
         supress_labels
-            Whether to not include high-confidence information for subsets of the hierarchy
+            Whether to not include marker definitions for subsets of the hierarchy in labels
         node_width
             Width of the nodes within the hierarchy display
         node_height
@@ -1063,7 +1065,7 @@ class Hierarchy:
 
 class Subset:
     '''
-    A Hierarchy building block, describing a population of cells. These can be added to a Hierarchy using the `.add_subset()` method
+    A Hierarchy building block, describing a population of cells beneath a classification layer. These can be added to a Hierarchy using the `.add_subset()` method
 
     Parameters
     ----------
@@ -1075,39 +1077,36 @@ class Subset:
     color
         Hex code (including the #) that defines the color associated with the subset when displaying the hierarchy or making color dictionaries
     '''
-    def __init__(self,values: Union[List[str], List[List[str]]],color: str='#FFFFFF'):
+    def __init__(self,values: Union[List[str], List[List[str]], dict],color: str='#FFFFFF'):
         self.values = values
         self.color = color
         return
 
 class Classification:
     '''
-    A Hierarchy building block, describing subsetting rules. These can be added to a Hierarchy using the `.add_classification()` method
+    A Hierarchy building block, describing subsetting rules, whose parent is a subset (or "all"). These can be added to a Hierarchy using the `.add_classification()` method
 
     Parameters
     ---------
     markers
-        The features that will be used for high-confidence thresholding to define subsets beneath this classification. During thresholding, 
-        matching or similar feature names are looked up first in the provided data_key, then in the .var. See mmc.utils.marker for details 
-        on how lookup can be specified.
+        The features that will be used for high-confidence thresholding to define subsets beneath this classification. During thresholding, matching or similar feature names are looked up first in the provided data_key, then in the .var. See mmc.utils.marker for details on feature lookup.
     min_events
-        The minimum number of (or proportion of total) high-confidence events that must be identified for in order to train a random forest
-        classifier with each Subset. If not enough events are identified, that Subset will be skipped.
+        The minimum number of (or proportion of total) high-confidence events that must be identified for in order to train a random forest classifier with each Subset. If not enough events are identified, that Subset will be skipped.
     class_weight
-        The class_weight strategy for handling scoring. This is passed to sklearn.ensemble.RandomForestClassifier. 
+        The class_weight strategy for handling scoring ("balanced" or "balanced_subsample"). This is passed to sklearn.ensemble.RandomForestClassifier. 
     in_danger_noise_checker
         Whether to check for (and amplify or remove, respectively) in danger and noise events. In danger events are high-confidence 
         events at classification boundaries. Events labeled noise are high-confidence events whose nearest neighbors do not share the same label, 
-        and are thus likely mislabeled. Can be a boolean, or "in danger only"/"noise only".
+        and are thus likely mislabeled. Can be a boolean, "in danger only", or "noise only" for only amplifying danger or removing noise respectively.
     classifier
-        The classifier to be used for classification. If defined, must also define feature_names.
+        The classifier to be used for classification. If defined, one must also define feature_names.
     features_limit
         listlike of str or dictionary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
         Specifies the default features allowed for training the classifier.
     feature_names
         Names of features used to train this classifier. Not set if classifier is None.
     is_cutoff
-        The default for whether Classification nodes should be treated as a cutoff (triggering only high-confidence thresholding).
+        The default for whether Classification nodes should be treated as a cutoff triggering only high-confidence thresholding (True) or if a random forest should be created and trained to make classification (False). Cutoff layers can also be used with categorical or boolean data to subset down to a single tissue site or other relevant metadata.
     features_limit
         Listlike of str or dictionary in the format {'modality_1':['gene_1','gene_2',...], 'modality_2':'All'}
         Specifies the default features allowed for training the classifier.
@@ -1117,12 +1116,10 @@ class Classification:
         The default list of Subsets for which training events should be sampled with spike-ins from across batches, even if individual batches
         have enough events for training. This can be useful for cell types that are very heterogenous across batches.
     calibrate
-        Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect 
-        the % of trees in agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level.
+        Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect the % of trees in agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level.
     clf_kwargs
         The keyword arguments for classification. For more information about other kwargs that can be set, please see: 
-        sklearn.ensemble.RandomForestClassifier In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees 
-        in the forest.
+        sklearn.ensemble.RandomForestClassifier. In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees in the forest.
     '''
     def __init__(self, markers: List[str],
                  min_events: Optional[Union[int, float]]=None, 
@@ -1184,7 +1181,7 @@ def hc_defs(marker_list: List[str], pos: Union[List[str],str]=[],
     UNDEFINED
         Default value describing any undefined markers (should usually not be altered)
     any_of
-        Used to define more complex gating. Can be represented as a list of markers (a single grouping) or a list of these lists (multiple pairings)
+        Used to define more complex gating. Can be represented as a list of markers (a single grouping) or a list of these lists (multiple pairings), where some of the markers must meet a specified condition. By default one member of the list must be positive and list of lists are connected by logical 'or's
     any_ofs_connector
         In the case of any_of being a list of lists, whether to join them with an "&" for 'and' or a '|' for 'or' to create complex gating, 
         "&" for "at least 1 of [CCR7,SELL] AND at least 1 of [TCF7, MAL]" 

@@ -65,7 +65,7 @@ Once you have set up the environment, clone this repository and `cd` into its ro
 git clone https://github.com/donnafarberlab/mmochi.git
 cd mmochi
 ```
-(Note: The root directory is the one the README.md)
+(Note: The root directory is the one the with README.md in it)
 
 **ALTERNATIVELY**, you can download the repository as a .zip file, extract it, and navigate to its root directory (which may be named `MMoCHi-main`).
 

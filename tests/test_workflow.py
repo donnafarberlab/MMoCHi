@@ -4,6 +4,11 @@ import anndata
 import numpy as np 
 import pandas as pd 
 
+# To prevent pytests blocking for plot windows
+mmc.plotting.plt.show = mmc.plotting.plt.close
+mmc.landmarking.plt.show = mmc.landmarking.plt.close
+mmc.thresholding.plt.show = mmc.thresholding.plt.close
+
 @pytest.fixture(scope="module")
 def files():
     files = ['pbmc_10k_protein_v3.h5','5k_pbmc_protein_v3.h5','pbmc_1k_protein_v3.h5']

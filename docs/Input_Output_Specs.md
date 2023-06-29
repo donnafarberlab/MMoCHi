@@ -92,3 +92,49 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
 ### `.log` file (if `mmc.log_to_file()` is run before `mmc.classify()`)
 
 -  While functions in the `mmochi` package are running, they will use logging to print info, warnings, and errors to the output or error stream. If you run `mmc.log_to_file()` these outputs will also be written to that file, along with other information that is not printed to the output stream. 
+
+## Example code for formatting 
+
+To help with formatting your data properly for MMoCHi (with one modality stored in the `.obsm`) we have provided some example cases below.
+
+If you have two separate `anndata.AnnData` objects indexed identically by cell barcode, you can combine them as follows:
+```python
+import scanpy as sc
+import pandas as pd
+
+adata = sc.read_adata('gex.h5ad')
+protein=sc.read_adata('adt.h5ad')
+# Note if protein.X is a sparse matrix, you may need to use protein.X.A
+adata.obsm['protein'] = pd.DataFrame(protein.X, index=protein.obs_names, columns = protein.var_names)
+adata.write_h5ad('mmochi_formatted.h5ad')
+```
+
+If you have two separate `.loom` files, indexed identically by cell barcode, you can follow the following code, replacing `ra.Antigen` with the row attribute containing protein names:
+```python
+import scanpy as sc
+import loompy 
+import numpy as np
+import pandas as pd
+
+adata = sc.read_loom('gex.loom')
+with loompy.connect('adt.loom') as protein:
+    # This can be helpful to remove '/' characters from antigen names.
+    proteins = [p.replace('/','_') for p in protein.ra.Antigen]
+    adata.obsm['protein'] = pd.DataFrame(protein[:,:], 
+                                         index=adata.obs_names, 
+                                         columns=proteins)
+adata.write_h5ad('mmochi_formatted.h5ad')
+```
+
+If you have a `mudata.MuData` object, you can follow the following code, replacing the `'gex'` and `'adt'` modalities with your modality names:
+```python
+import mudata as md
+mdata = md.read_h5mu('mudata.h5mu')
+
+adata = madata.mod['gex'].copy()
+# Note if madata.mod['adt'].X is a sparse matrix, you may need to use protein.X.A
+adata.obsm['protein'] = pd.DataFrame(madata.mod['adt'].X, 
+                                     index=madata.mod['adt'].obs_names, 
+                                     columns=madata.mod['adt'].var_names)
+adata.write_h5ad('mmochi_formatted.h5ad')
+```

@@ -16,7 +16,7 @@ from .logger import logg
 def plot_tree(hierarchy, level: str,
               tree_number: int=random.randint(1,10), save: str='tree.png'):
     '''
-    Plots a tree from the random forest at a specified level of the classifier. Note these plots are often very unwieldy.
+    Plots a tree from the random forest at a specified level of the classifier. Note these plots are often very unwieldy. See export_graphviz for details.
     
     requires Graphviz which can be obtained with 
     sudo apt-get install graphviz
@@ -57,7 +57,7 @@ def plot_tree(hierarchy, level: str,
     return
 
 def feature_importances(hierarchy, level: str) -> pd.DataFrame:
-    '''Returns a DataFrame of features and their importances in the random forest of a given level. 
+    '''Returns a DataFrame of features used in classification and their importances in the random forest of a given level. 
     See sklearn.RandomForestClassifier for more information on interpreting these values.
     
     Parameters
@@ -87,7 +87,7 @@ def _check_levels(levels: Union[str, List[str]], hierarchy=None, include_cutoff:
     Parameters
     ----------
     levels
-        Potential levels of the classifier to check the validity of. Levels may be "All" to specify all classification levels. 
+        Potential levels of the classifier to check the validity of. Levels may be "All" to specify all classification levels if a hierarchy is defined.
     hierarchy
         Object use to check the existence of levels, if not defined all levels are returned
     include_cutoff
@@ -200,7 +200,7 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
                    save: str=None, show: bool=True,
                    title_addition: str=None, **kwargs):
     '''
-    Determine the performance at a single level by creating a confusion plot.
+    Determine the performance at a single level by creating a confusion plot using high-confidence thresholds as truth.
     
     Parameters
     ----------
@@ -240,7 +240,7 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
 
 def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only=True, **kwargs):
     '''
-    Determine the performance at a single level by creating a confusion plot.
+    Determine the performance at a single level by creating a confusion plot using high-confidence thresholds as truth.
     
     Parameters
     ----------
@@ -286,7 +286,7 @@ def plot_confidence(adata: anndata.AnnData, levels: Union[str, List[str]],
                     show: bool=True, title_addition: str=None,
                     bins: int=10):
     '''
-    Determine how confident classification is for each subset by displaying calibration curves.
+    Determine how confident classification is for each subset by displaying calibration curves, which compare the events classified at a given class to its confidence.
     
     Parameters
     ----------
@@ -388,7 +388,7 @@ def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]
                             holdout_only: bool=False, batch_key: str=None, key_added: str='lin',
                             save: str=None, show: bool=True,
                             title_addition: str=None):
-    '''Creates violin plots for the 25 most important genes or proteins for each specified level in levels
+    '''Creates violin plots for the 25 most important genes or proteins for each specified level in levels.
     
     Parameters
     ----------

@@ -23,7 +23,6 @@ def _addLoggingLevel(levelName, levelNum, methodName=None):
     >>> logging.getLogger(__name__).trace('that worked')
     >>> logging.trace('so did this')
     >>> logging.TRACE
-    5
 
     """
     if not methodName:
@@ -67,7 +66,7 @@ class _OneLevelFileHandler(logging.FileHandler):
             super().emit(record)
 
 def _initiate_log():
-    '''Creates a log files with the name log_file'''
+    '''Creates a log file with the name log_file'''
     logging.basicConfig(format="%(levelname)s - %(message)s",level=logging.INFO)
     logg.propagate = False
     if (logg.hasHandlers()):
@@ -86,7 +85,7 @@ def _initiate_log():
     logg.debug('Set up logger.')
     return
 
-def log_to_file(file_name, file_mode='w'):
+def log_to_file(file_name: str, file_mode: str='w'):
     '''
     Enable logging for all functions in the MMoCHi package
     

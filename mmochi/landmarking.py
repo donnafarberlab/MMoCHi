@@ -63,8 +63,7 @@ def landmark_register_adts(adata: anndata.AnnData, batch_key: str=utils.BATCH_KE
         Whether to show plotted intermediates to better reveal peak detection. Note, this disables parallel processing. 
         Integers (up to 3) correspond to increased verbosity level.
     single_peaks
-        Columns in adata.obsm[data_key] corresponding to ADTs to only align a single peak of. If multiple peaks are found, the maximum 
-        on the histogram will be used. 
+        Columns in adata.obsm[data_key] corresponding to ADTs to only align a single peak of. If multiple peaks are found, the maximum on the histogram will be used. 
     marker_bandwidths
         In the format {'marker_1':0.5}, to override bandwidths used for individual markers
     peak_overrides
@@ -174,17 +173,17 @@ def update_landmark_register(adata: anndata.AnnData, batch: str,
                              show: Union[bool, int]=False,
                              single_peaks: Union[bool,List[str]]=[],
                              bandwidth: Union[float,dict]=0.2, **kwargs)-> anndata.AnnData:
-    '''  Landmark registration batch correction for ADT expression for a single marker on a single batch. landmark_register_adts() must be run
-    before this. See landmark_register_adts for more details.
+    '''  
+    Landmark registration batch correction for ADT expression for a single marker on a single batch. landmark_register_adts() must be run before this. See landmark_register_adts for more details.
     
     Parameters
     ---
     adata
         object with [batch_key] in .obs, [data_key] log or arcsine normalized data in .obsm to be batch corrected
     batch
-        Corresponding to batch information
+        Batch to in .obs[batch_key] to define batch to landmark register
     marker
-        Corresponding to the marker of interest
+        Corresponding marker of interest
     override
         Can be a listlike of two floats corresponding to the positive and negative peaks, or a dict with an item in { batch:{marker:[0.1,0.5]} }. 
         To force a positive peak, pass [None,float] as the override. To force a negative peak, you can pass simply [float]. 
@@ -258,7 +257,7 @@ def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarra
             single_peak: bool
                 If true only look for one peak to correct on
             bandwidths: float
-                Mernel density estimation factor to be used in gaussian KDE
+                Mernel density estimation factor to be used in Gaussian KDE
             overrides: list of floats
                 Manual peaks location to be used for this batch
     base_barcodes
@@ -337,7 +336,7 @@ def _detect_landmarks(y: np.array, single_peak: bool=False,
                       info: str=None, primary_prominence: Union[int,float]=0.003, 
                       secondary_prominence: Union[int,float]=0.0008) -> List[Union[int, float]]:
     '''
-    Finds the location of a peak(s) in the probability density function data 
+    Finds the location of peak(s) in the probability density function data 
     
     Uses on scipy.signal.find_peaks to find the locations of landmarks in the inputted data in order to separate (negative and) positive populations.
     
@@ -345,11 +344,11 @@ def _detect_landmarks(y: np.array, single_peak: bool=False,
     ----------
     y
         Binned array of values in which to find one or more data peaks 
-    single_peak boolean:
+    single_peak
         If true only try to detect a single peak in the data
     landmark_threshold number:
-        Maximum derivative where a peak will be counted as a peak
-    peak_min_height number:
+        Maximum derivative and minimum negative derivative where a peak will be counted as a peak
+    peak_min_height
         Minimum height that a peak must be in order to be detected
     show
         Whether to show plotted data to better reveal peak detection. Integers (up to 3) correspond to increased verbosity level.
@@ -466,7 +465,7 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
                           save_fig: str=None, subsample: Union[float, int]=1,
                           bw_adjust: Union[float,int]=0):
     '''
-    Method to plot multiple density plots of positive and negative peaks for batches and [data_keys]s with properly placed labels.
+    Method to plot multiple density plots of positive and negative peaks for batches and [data_keys]s with properly placed labels. Method will create density plots for all items in a batch to help visualize the process of realignment (landmark registration)
     
     Code adapted from https://python.plainenglish.io/ridge-plots-with-pythons-seaborn-4de5725881af
     

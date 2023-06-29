@@ -44,7 +44,7 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
     Returns
     -------
     scipy.sparse.csr_matrix
-        Reduced adata data
+        Reduced adata data for classification
     list
         List of features that were checked/used in the reduction process 
     """
@@ -82,12 +82,12 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
 
 def _limit_features_list_to_dict(features_limit: List[str]) -> dict:
     """
-    Creates dictionary of feature names to modalities, splits rows of np.array with first column as key and last column as value.
+    Creates dictionary of feature names to modalities, splits rows of np.array with first column as key and second column as value.
     
     Parameters
     ----------
     features_limit
-        array with feature names in first column and modalities in last column
+        array with feature names in first column and modalities in second column
     
     Returns
     -------
@@ -105,7 +105,7 @@ def _limit_and_realign_features(X: sp.csr_matrix, feature_names: List[str],
                                 features_limit: Union[List[str], dict],
                                 assert_all_included: bool=False) -> Tuple[sp.csr_matrix, list]:
     """
-    Removes any features from X that are not in features_limit and realigns new matrix of features and features list to reflect removed features
+    Removes any features from X that are not in features_limit (if supplied) and realigns new matrix of features and features list to reflect removed features, in addition to alphabetically sorting the features.
     
     Parameters
     ----------
@@ -116,11 +116,11 @@ def _limit_and_realign_features(X: sp.csr_matrix, feature_names: List[str],
     features_limit
         features to keep in X
     assert_all_included
-        If true, throw error if not all features in features limit also exist in features names
+        Whether to throw error if not all features in features limit also exist in features names
     Returns
     -------
     check_array: csr.spare_matrix
-        Validated, limited, and realigned array
+        Validated, limited, realigned, and sorted array
     features_used: list
         The sorted features in check_array
     """
@@ -164,7 +164,7 @@ def _limit_and_realign_features(X: sp.csr_matrix, feature_names: List[str],
 def _reduce_features(X: sp.csr_matrix, feature_names: List[str],
                      min_cells: int=50) -> Tuple[sp.csr_matrix, List[str]]:
     """
-    Reduce features that are only expressed in fewer than min_cells_threshold cells.
+    Remove features that are expressed in fewer than min_cells_threshold cells.
     
     Parameters
     ----------
@@ -207,6 +207,10 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     """
     Classify subsets using the provided hierarchy. If the hierarchy has not yet been trained, this function trains the hierarchy and predicts cell types. If the hierarchy has been trained, this classifier will not retrain random forests unless explicitly asked to (retrain=True). Many classifier kwargs are defined in the hierarchy on a node-by-node basis. Please see mmc.Hierarchy() and mmc.add_classification() for additional details. 
     
+    Classifications information for every level are recorded in .obsm['lin']. [classification_layer]_class denotes the classified MMoCHi classification for each event. [classification_layer]_hc denotes the high-confidence thresholded categories for each event. [classification_layer]_held_out denotes whether the event is part of explicit hold-out for that layer for each event. [classification_layer]_train is a boolean column indicating whether the event was used in training (noise events can be neither hold_out nor _train). [classification_layer]_traincounts denotes the number of times an event was used in training (amplified events can have _traincounts >1). [classification_layer]_probability indicates the confidence of the classifier at the specified layer for each event.
+    
+    Note: Only [classification_layer]_hc and [classification_layer]_class layers are created for cutoff layers
+    
     We recommend following this function with mmc.terminal_names() to put classifications into a `.obs` column
     
     Note: If this function terminates prematurely, adata.obs_names may be corrupted. The original adata.obs_names can be found in adata.obs['MMoCHi_obs_names'].
@@ -234,7 +238,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     plot_thresholds
         Whether to display histograms of expression distribution while performing high-confidence thresholding
     reduce_features_min_cells
-        Remove features that are expressed in fewer than this number, passed to _reduce_features. 
+        Remove features that are expressed in fewer than this number of cells, passed to _reduce_features. 
         Feature reduction can be a very powerful tool for improving classifier performance. 
         Only used if X and features_used are not provided and retrain is True.
     allow_spike_ins
@@ -242,14 +246,14 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         but not the overall dataset. If False, errors may occur if there are no cells of a particular subset within a batch. Warning, spike ins currently 
         do not respect held out data, meaning there will be much fewer than 20% held out data if spike ins are frequent.
     enforce_holdout
-        Wehther to enforce a hold out of an additional 20% at each classification level, to prevent spike-ins from using that data.        
+        Whether to enforce a hold out of an additional 20% at each classification level, to prevent spike-ins from using that data.     
     probabilities_suffix
         If defined, probability outputs of the full df of predict_probabilities will be saved to the .uns[level+probabilities_suffix]
     resample_method
         Method used to resample high-confidence data prior to training, passed to _balance_training_classes. "Oversample" or None. Other methods are experimental. See _balance_training_classes and the imblearn package for details.
     weight_integration
         Whether to have each batch represented equally in the forest, or weight the number of trees from each batch to their representation in the total dataset 
-    X, features_used: scipy.sparse.csr_matrix and listlike of str
+    X, features_used scipy.sparse.csr_matrix and listlike of str
         Optional setup data to circumvent the initial classifier setup functions. The presence of both of these overrides any predefined feature reduction 
         techniques.   
     probability_cutoff
@@ -257,8 +261,9 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     features_limit
         A list of str specifying features to limit to, in the format [feature_name]_mod_[modality], e.g. 
     skip_to
+        Name of hierarchy classification levels to start at. This is extremely useful when debugging particular levels of the classifier.
     end_at
-        Names of hierarchy classification levels to start at or prematurely end at. This is extremely useful when debugging particular levels of the classifier.
+        Name of hierarchy classification levels to prematurely end at. This is extremely useful when debugging particular levels of the classifier.
         The order of levels corresponds to the order they are defined in the hierarchy. Requires that the AnnData object has a predefined .obsm[key_added]. If
         skip_to is defined, it replaces only the columns that occur at and beyond that level.
     reference
@@ -267,9 +272,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     Returns
     -------
     adata: AnnData object
-        Object containing a .obsm[key_added] containing columns corresponding to the classification high-confidence ("_hc"), the held out data not used for testing ("_held_out"), the 
-        prediction ("_class") for each level. If probababilities_suffix is defined, also contains "_probabilities" keys in the .uns corresponding to the prediction probabilities
-        of each class for each event.
+        Object containing a .obsm[key_added] containing columns corresponding to the classification high-confidence ("_hc"), the held out data not used for testing ("_held_out"), the prediction ("_class") for each level. If probababilities_suffix is defined, also contains "_probabilities" keys in the .uns corresponding to the prediction probabilities of each class for each event.
     Hierarchy: Hierarchy object
         A trained hierarchy with classifiers built into it and a record of thresholds and other settings used. 
     """
@@ -619,33 +622,31 @@ def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                  batch: Optional[str]=None, log_reference: bool=True) -> pd.DataFrame:
     """
     Performs high-confidence thresholding using the subset definitions defined in one level of a MMoCHi hierarchy. 
-    Note: This function relies on `mmc.utils.get_data()` for extracting expression information from the adata object. Thus, for each marker it will first
-    search for matching proteins, then genes, and finally the .obs for matching feature names. If '_gex' or '_obs' are appended to the marker name, this 
-    priority order will be bypassed. 
+    Note: This function relies on `mmc.utils.get_data()` for extracting expression information from the adata object. Thus, for each marker it will first search for matching proteins, then genes, and finally the .obs for matching feature names. If '_gex' or '_obs' are appended to the marker name, this priority order will be bypassed. 
 
     
     Parameters
     ----------
-    adata: AnnData object
+    adata:
         Object containing gene expression data, and expression data for modalities for every data key in .obsm
     hierarchy: Hierarchy object 
         Specifies one or more classification levels and subsets.
-    level: str
+    level
         Name of a classification level in the hierarchy to threshold and high-confidence threshold on
-    data_key: str
+    data_key
         Key in adata.obsm to be used for high-confidence thresholding
-    plot: bool
+    plot
         Passed to thresholding.threshold, whether to display histograms of thresholds
-    reference: optional, str
+    reference: 
         Column in the adata.obs to be used for logged debug info to reveal how the hc_threshold function performs       
-    batch: optional, str
+    batch
         Name of a column in adata.obs that corresponds to a batch for use in the classifier   
-    log_reference: bool
+    log_reference
         If true, logs high-confidence thresholding information
         
     Returns
     -------
-    templin: pandas.DataFrame
+    templin
         Dataframe of high-confidence calls for which classification an event falls into for the specified level of the hierarchy
     """
     # Get necessary information
@@ -804,7 +805,7 @@ def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_ma
 def _in_danger_noise(nn_estimator, samples: List[Tuple[anndata.AnnData, sp.csr_matrix]],
                      y: Union[anndata.AnnData, sp.csr_matrix]) -> np.array:
     """
-    Estimate if a set of sample are in danger or noise.
+    Estimate if events in a sample are in danger or noise. This calculation is performed by clustering and performing nearest neighbors on samples to identify events with no niehgbors in agreement (noise) or partial neighbor agreement (in danger).
     Adapted from BorderlineSMOTE and SVMSMOTE of the imblearn package.
     Note that this function relies on scanpy's implementations of HVGs and PCA, but there may be a better approach computationally for this.
     
@@ -921,8 +922,7 @@ class _HVF_PCA_Neighbors():
 def _borderline_balance(nn_estimator, X: sp.csr_matrix,
                        y: np.array, min_cluster_size: float=0.01) -> Tuple[sp.csr_matrix, np.array]:
     """
-    Uses nearest neighbors clustering to cluster data in y, and for clusters larger than the minimum cluster size, duplicates events in training data to 
-    equalize its representation.
+    Uses nearest neighbors clustering to cluster data in y, and for clusters larger than the minimum cluster size, duplicates events in training data to equalize its representation.
     
     Parameters
     ----------
@@ -931,7 +931,7 @@ def _borderline_balance(nn_estimator, X: sp.csr_matrix,
     X
         .X column that references the same AnnData object as Y
     y
-        Data to cluster
+        Data to cluster and balance
     min_cluster_size
         Minimum proportion of all classes that a cluster must contain
     
@@ -1057,8 +1057,7 @@ def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
                    key_added: str='lin', voting_reference: str = None, 
                    majority_min: float=.9) -> anndata.AnnData:
     """
-    Create a column in the .obs featuring the most specific classification/subset for each event. Uses horizonal concatenation (rightward has
-    priority) of classifications in the adata.obsm[key_added]
+    Create a column in the .obs featuring the most specific classification/subset for each event. Uses horizonal concatenation (rightward has priority) of classifications in the adata.obsm[key_added]
     
     Parameters
     ----------
@@ -1154,22 +1153,23 @@ def identify_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
     Parameters
     ----------
     adata: AnnData object 
-        Logarithmic data
+        Log normalized data to run differential expresssion on. Contains group 1 and 2 in .obs. Must have X_umap to plot.
     group1: Union[str, Iterable[str]]
         Subset of groups to compare on, see sc.tl.rank_genes_groups for more detailed documentation
     group2: Union[str, Iterable[str]]
         Second subset of groups to compare on, see sc.tl.rank_genes_groups for more detailed documentation
     batch_val: str or list of str
-        If not none, only identifies group markers on data in the batch of batch_val
+        Batch or batches used to limit the events that differential expression is run on (in adata.obs[batch])
     batch: str
         Name of a column in adata.obs that corresponds to a batch for use in the classifier   
     reference: str
-        .obs tag to split groups 1 and 2 on
+        .obs tag to find and split groups 1 and 2 on
     key_added: str
         Key in the adata object that contains the classification results
     filtered: bool
         Uses sc.tl.filter_rank_genes_groups to filter out genes base on log fold changes and genes inside and outside groups
     plot: bool
+        Whether to plot a UMAP of the events colored by their differential expression, using X_umap. 
     min_fold_change: int
         If filtered, passed to sc.tl.filter_rank_genes_groups
     min_in_group_fraction: float [0,1]
