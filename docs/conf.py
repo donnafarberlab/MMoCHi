@@ -22,7 +22,7 @@ from pathlib import Path
 from ipywidgets.embed import DEFAULT_EMBED_REQUIREJS_URL
 
 HERE = Path(__file__).parent
-sys.path[:0] = [str(HERE.parent), str(HERE / 'extensions')]
+sys.path[:0] = [str(HERE.parent)]
 import mmochi
 
 html_js_files = [
@@ -95,7 +95,7 @@ html_css_files = [
 ]
 
 
-html_theme_options={'logo_only':True,'display_version':False}#,'style_nav_header_background':'#ff7b00'}
+html_theme_options={'logo_only':True,'display_version':True}#,'style_nav_header_background':'#ff7b00'}
 
 
 
