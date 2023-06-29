@@ -21,6 +21,10 @@ import inspect
 from pathlib import Path
 from ipywidgets.embed import DEFAULT_EMBED_REQUIREJS_URL
 
+HERE = Path(__file__).parent
+sys.path[:0] = [str(HERE.parent), str(HERE / 'extensions')]
+import mmochi
+
 html_js_files = [
     DEFAULT_EMBED_REQUIREJS_URL,
 ]
@@ -30,9 +34,9 @@ copyright = '2023, Daniel Caron'
 author = 'Daniel Caron'
 repository_url = "https://github.com/donnafarberlab/MMoCHi"
 
-# version = mmochi.__version__
-# release = version
-release = '0.2.2'
+version = mmochi.__version__
+release = version
+# release = '0.2.2'
 
 # -- General configuration ---------------------------------------------------
 
