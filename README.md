@@ -11,8 +11,8 @@ It includes tools for:
 3. <b>Building a hierarchy</b> of cell subset classifiers 
 4. <b>Training and evaluating</b> random forest classifiers at each hierarchy level
 
-## Docs
-Documentation is on the way!
+## Read the Docs
+You can read the documentation [here](https://mmochi.readthedocs.io)!
 
 ## Tutorials
 
