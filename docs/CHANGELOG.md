@@ -16,6 +16,28 @@ pip install .
 ---
 ## Current version
 
+### [0.2.2] - 30JUN23
+
+#### Added
+
+- Automated documentation hosted by ReadTheDocs
+
+- Issue templates
+
+- Examples MMoCHi hierarchies
+
+- Examples in Input/Output Specifications for how to correctly format various objects
+
+#### Fixed 
+
+- Updated documentation of various functions
+
+- Added temporary requirement limiting scikit-learn to below 1.3.0, as that update breaks imbalanced-learn
+
+- Removed mmochi package from Python3_8_requirements.txt 
+
+- Prevented plot windows from oppening while running pytest on some systems
+
 ### [0.2.1] - 17JUN23
 
 #### Added
@@ -41,7 +63,6 @@ pip install .
 - Bug handling `np.nan` in `mmc.utils.umap_interrogate_level`
 
 - Disabled some internal warnings in `mmc.utils`
-
 
 ### [0.2.0] - 26MAY23
 
