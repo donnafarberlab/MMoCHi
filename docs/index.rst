@@ -7,7 +7,7 @@ MMoCHi - MultiModal Classification Hierarchy
    :end-line: 13
    
 
-* To get started with MMoCHi, see :ref:`installation`, :ref:`tutorials`, and :ref:`Example_Hierarchies`.
+* To get started with MMoCHi, see :ref:`installation`, :ref:`tutorials`, and :ref:`Example Hierarchies`.
 * For more details on formatting your data correctly, read the :ref:`Input and Output Specifications`.
 * For complete documentation, check out our :ref:`api`.
 * Check out our `Github <https://github.com/donnafarberlab/MMoCHi>`_! 
