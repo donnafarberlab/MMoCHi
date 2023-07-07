@@ -14,6 +14,9 @@ It includes tools for:
 ## Read the Docs
 You can read the documentation [here](https://mmochi.readthedocs.io)!
 
+## Check out our preprint 
+Daniel P. Caron, William L. Specht, David Chen, Steven B. Wells, Peter A. Szabo, Isaac J. Jensen, Donna L. Farber, Peter A. Sims. "**Multimodal hierarchical classification of CITE-seq data delineates immune cell states across lineages and tissues**." bioRxiv, 2023 [[Open access article]](https://www.biorxiv.org/content/10.1101/2023.07.06.547944v1)
+
 ## Tutorials
 
 ### Quick Start
