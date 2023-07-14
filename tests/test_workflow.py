@@ -261,16 +261,16 @@ def test_umap_thresh(landmarked, test_hierarchy_load_thresholds):
     mmc.utils.umap_thresh(landmarked,test_hierarchy_load_thresholds,batch_key='batch')   
     
 def _verify_lin(adata, classification_levels):
-    levels = [i for i in classification_levels if i != 'Junk_Removal']
-    for level in classification_levels:
+    levels = [i for i in classification_levels if i != 'Removal']
+    for level in levels:
         hc_na = adata.obsm['lin'][level+'_hc'].isna()
-        holdout_na = adata.obsm['lin'][level+'_holdout'] == False
+        holdout_na = adata.obsm['lin'][level+'_hold_out'] == False
         tcounts_na = adata.obsm['lin'][level+'_traincounts'].isna()
         train_na = adata.obsm['lin'][level+'_train'] == False
         proba_na = adata.obsm['lin'][level+'_probability'].isna()
         class_na = adata.obsm['lin'][level+'_class'].isna()
         assert all(adata.obsm['lin'][hc_na & holdout_na & tcounts_na & train_na & proba_na & class_na] == adata.obsm['lin'][hc_na])
-        assert sum(adata.obsm['lin'][level+'_holdout'][~holdout_na] & adata.obsm['lin'][level+'_train'][~train_na]) == 0
+        assert sum(adata.obsm['lin'][level+'_hold_out'][~holdout_na] & adata.obsm['lin'][level+'_train'][~train_na]) == 0
         assert sum((~adata.obsm['lin'][level+'_train'][~holdout_na]) & (adata.obsm['lin'][level+'_traincounts'][~holdout_na] > 0)) == 0
         assert sum((adata.obsm['lin'][level+'_train'][~holdout_na]) & ~(adata.obsm['lin'][level+'_traincounts'][~train_na] > 0)) == 0
 
@@ -332,9 +332,11 @@ def test_various_settings(landmarked,test_hierarchy_load_thresholds):
     h.default_min_events=1
 
     landmarked.var['to_use'] = list([True,True,True,False]*len(landmarked.var_names))[0:len(landmarked.var_names)]
+    print('run 1')
     adata,hierarchy = mmc.classify(landmarked, h.copy(), 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True,features_limit='to_use',
                                    reduce_features_min_cells=0) 
+    
     _verify_lin(adata, hierarchy.get_classifications())
     adata.write_h5ad('docs/data/test_adata.h5ad')
     
@@ -343,42 +345,49 @@ def test_various_settings(landmarked,test_hierarchy_load_thresholds):
                                                 landmark_protein=['CD19','CD3','CD20','cat'])
     h2.tree['Lymphoid'].data.features_limit = [i+'_mod_GEX' for i in landmarked.var_names]
 
+    print('run 2')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True)
     _verify_lin(adata, hierarchy.get_classifications())
-    
     h2 = h.copy()
     h2.default_force_spike_ins = ['Lymphocyte']
+    print('run 3')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True,
                                    skip_to='Gross',end_at='Gross')
     _verify_lin(adata, ['Gross',])
     h2 = h.copy()
     h2.default_calibrate = False
+    print('run 4')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True)
     _verify_lin(adata, hierarchy.get_classifications())
     h2 = h.copy()
+    print('run 5')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key=None, retrain = True) 
     _verify_lin(adata, hierarchy.get_classifications())
     mmc.classifier.DEBUG_ERRORS = False
     h2 = h.copy()
     h2.default_min_events = 0.5
+    print('run 6')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', batch_key=None, retrain = True) 
     mmc.classifier.DEBUG_ERRORS = True
     
     h2 = h.copy()
     h2.default_cutoff = True
+    print('run 7')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key=None, retrain = True, reference='batch')  
     _verify_lin(adata, hierarchy.get_classifications())
     
+    print('run 8')
     adata,hierarchy = mmc.classify(landmarked, h.copy(), 'lin', 'landmark_protein', 
                                batch_key='batch', retrain = True, probability_cutoff=0.8) 
     _verify_lin(adata, hierarchy.get_classifications())
     h2 = h.copy()
     h2.default_in_danger_noise_checker = 'danger and noise and rebalance'
+    print('run 9')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True)   
     mmc.classifier.DEBUG_ERRORS = False

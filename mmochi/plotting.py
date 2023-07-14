@@ -191,7 +191,7 @@ def _mask_adata(adata: anndata.AnnData, level: str,
     if hc_only:
         mask = mask & (adata.obsm[key_added][level+'_hc'] != "?").values & ~(adata.obsm[key_added][level+'_hc']).isna()
     if holdout_only:
-        mask = mask & (adata.obsm[key_added][level+'_holdout']).values
+        mask = mask & (adata.obsm[key_added][level+'_hold_out']).values
     return adata[mask]
 
 def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]], 

@@ -19,6 +19,7 @@ from . import utils
 from .logger import logg
 from . import thresholding
 
+
 DEBUG_ERRORS = False
 
 def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
@@ -51,17 +52,15 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
     logg.print('Setting up...')
     if type(x_modalities) is str and x_modalities in adata.var.columns:
         x_modalities = adata.var[x_modalities]
-    
     if data_key is None:
         logg.print('Using .X only')
-        
         X = sp.csr_matrix(adata.X)
         utils._validate_names(adata.var_names) 
         features_used = list(adata.var_names+"_mod_"+x_modalities)
     else:
         logg.print('Using .X and '+str(data_key))
         X = sp.csr_matrix(adata.X)
-        X = sp.hstack([X,adata.obsm[data_key]],format='csr')
+        X = sp.hstack([X,sp.csr_matrix(adata.obsm[data_key])],format='csr')
         utils._validate_names(adata.var_names) 
         utils._validate_names(adata.obsm[data_key].columns) 
         features_used = list(adata.var_names+"_mod_"+x_modalities) + list(adata.obsm[data_key].columns+"_mod_"+data_key)
@@ -142,13 +141,12 @@ def _limit_and_realign_features(X: sp.csr_matrix, feature_names: List[str],
         else:
             logg.warn('Limiting features using listlike, make sure you include modality information...')
             f_limit = features_limit
-
         assert pd.api.types.is_list_like(f_limit), f'features_limit of type {type(f_limit)} not supported'
         feature_names = np.array(feature_names)
         feature_mask = np.isin(feature_names, f_limit)
         logg.debug(f'Limiting features, from {len(feature_names)} to {sum(feature_mask)}')
         assert sum(feature_mask) > 0, 'Limiting to 0 features invalid, check input...'
-        X=X[:,np.flatnonzero(feature_mask)]    
+        X=X[:,np.flatnonzero(feature_mask)]
         features_used = feature_names[np.flatnonzero(feature_mask)]
     if sorted(features_used) != list(features_used):
         logg.info('Resorting to enforce sorted order of features by name')
@@ -191,6 +189,7 @@ def _reduce_features(X: sp.csr_matrix, feature_names: List[str],
         logg.info("No min_cells feature reduction...")
     return X, feature_names
 
+
 def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy, 
              key_added: str='lin', data_key: Optional[str]=utils.DATA_KEY,
              x_data_key: Optional[str]=None, x_modalities: str='GEX',
@@ -207,7 +206,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     """
     Classify subsets using the provided hierarchy. If the hierarchy has not yet been trained, this function trains the hierarchy and predicts cell types. If the hierarchy has been trained, this classifier will not retrain random forests unless explicitly asked to (retrain=True). Many classifier kwargs are defined in the hierarchy on a node-by-node basis. Please see mmc.Hierarchy() and mmc.add_classification() for additional details. 
     
-    Classifications information for every level are recorded in .obsm['lin']. [classification_layer]_class denotes the classified MMoCHi classification for each event. [classification_layer]_hc denotes the high-confidence thresholded categories for each event. [classification_layer]_held_out denotes whether the event is part of explicit hold-out for that layer for each event. [classification_layer]_train is a boolean column indicating whether the event was used in training (noise events can be neither hold_out nor _train). [classification_layer]_traincounts denotes the number of times an event was used in training (amplified events can have _traincounts >1). [classification_layer]_probability indicates the confidence of the classifier at the specified layer for each event.
+    Classifications information for every level are recorded in .obsm['lin']. [classification_layer]_class denotes the classified MMoCHi classification for each event. [classification_layer]_hc denotes the high-confidence thresholded categories for each event. [classification_layer]_hold_out denotes whether the event is part of explicit hold-out for that layer for each event. [classification_layer]_train is a boolean column indicating whether the event was used in training (noise events can be neither hold_out nor _train). [classification_layer]_traincounts denotes the number of times an event was used in training (amplified events can have _traincounts >1). If SMOTE or its variations are used to balnce training data, traincounts will refer to rebalanced training counts and will not account for generated training events. [classification_layer]_probability indicates the confidence of the classifier at the specified layer for each event.
     
     Note: Only [classification_layer]_hc and [classification_layer]_class layers are created for cutoff layers
     
@@ -272,7 +271,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     Returns
     -------
     adata: AnnData object
-        Object containing a .obsm[key_added] containing columns corresponding to the classification high-confidence ("_hc"), the held out data not used for testing ("_held_out"), the prediction ("_class") for each level. If probababilities_suffix is defined, also contains "_probabilities" keys in the .uns corresponding to the prediction probabilities of each class for each event.
+        Object containing a .obsm[key_added] containing columns corresponding to the classification high-confidence ("_hc"), the held out data not used for testing ("_hold_out"), the prediction ("_class") for each level. If probababilities_suffix is defined, also contains "_probabilities" keys in the .uns corresponding to the prediction probabilities of each class for each event.
     Hierarchy: Hierarchy object
         A trained hierarchy with classifiers built into it and a record of thresholds and other settings used. 
     """
@@ -296,17 +295,16 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         assert gparent+"_class" in adata.obsm[key_added].columns, 'Attempting to skip to a level beneath an unclassified level'
         logg.warning(f'Skipped to classification on {skip_to}')
         for classification in classifications:
-            adata.obsm[key_added].drop([classification+"_class",classification+"_hc",classification+"_held_out",
+            adata.obsm[key_added].drop([classification+"_class",classification+"_hc",classification+"_hold_out",
                                         classification+"_probability",classification+"_train",classification+"_traincounts"],
                                         axis=1, inplace=True, errors='ignore')
     if not end_at is None:
-        classifications = classifications[:classifications.index(end_at)+1]
-            
-    total_adata, total_X = adata, X    
+        classifications = classifications[:classifications.index(end_at)+1]     
+    total_adata, total_X = adata, X  
     total_adata.obs['MMoCHi_obs_names'] = total_adata.obs_names
     total_adata.obs_names = range(0,len(total_adata))    
     total_adata.obs_names = total_adata.obs_names.astype(str)
-
+    
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
     if weight_integration:
         weights = list(np.array([sum(b)/len(b) for b in batch_masks]))
@@ -379,6 +377,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                             hc_df = pd.concat(hc_dfs_holdout)
                         if not batch_key is None:
                             hc_barcodes_batches = []
+                            spike_in_barcodes = [] # saving spike_in barcodes to make sure they are all not hold out
                             for df, batch in zip(hc_dfs, hc_batches):
                                 hc_barcodes_batch = list(df.index)
                                 for subset in subsets:
@@ -392,8 +391,11 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                                             events_needed = max(events_needed,0)
                                         if allow_spike_ins:
                                             logg.info(f'Spiking in {events_needed} of {subset} in {batch} to reach {min_events} events')
-                                            hc_barcodes_batch += random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
+                                            spike_in_barcode_batch = random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
                                                                                           ~hc_df.index.isin(hc_barcodes_batch)].index), events_needed)
+                                            spike_in_barcodes += spike_in_barcode_batch
+                                            hc_barcodes_batch += spike_in_barcode_batch
+                                            
                                         else:
                                             assert False, f"{batch_key} of {batch} is missing subset {subset}. Cannot train without spike ins."
                                     if subset in force_spike_ins:
@@ -401,8 +403,10 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                                                                                               ~hc_df.index.isin(hc_barcodes_batch))-1)
                                         events_needed = max(events_needed,0)
                                         logg.info(f'Spiking in {events_needed} of {subset} in {batch} as required by force_spike_ins)')
-                                        hc_barcodes_batch += random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
+                                        spike_in_barcode_batch = random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
                                                                                       ~hc_df.index.isin(hc_barcodes_batch)].index), events_needed)
+                                        spike_in_barcodes += spike_in_barcode_batch
+                                        hc_barcodes_batch += spike_in_barcode_batch
                                 hc_barcodes_batches.append(hc_barcodes_batch)
                         else:
                             hc_barcodes_batches = [list(hc_df[hc_df[level+'_hc']!='?'].index)]
@@ -429,49 +433,54 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     logg.print(f'Initializing classifier for {level}...')
                     clf = sklearn.ensemble.RandomForestClassifier(class_weight=class_weight,
                                                                   warm_start=(not batch_key is None),**clf_kwargs)
-
                     subset_X, features_used = _limit_and_realign_features(subset_X, features_used, f_limit)
                     n_estimators = clf.n_estimators
                     clf.n_estimators = 0
                     dfs = []
                     train_dfs = []
-                    
                     for hc_barcodes_batch, batch, weight in zip(hc_barcodes_batches, hc_batches,weights):
                         clf.n_estimators += int(np.ceil(n_estimators * weight))
                         logg.info(f'Training {int(np.ceil(n_estimators * weight))} new estimators using {batch}...')
                         df = hc_df.loc[hc_barcodes_batch].copy()
                         mapper = dict(zip(subset_adata.obs_names,range(0,len(subset_adata.obs_names))))
                         hc_barcodes_batch = [mapper[i] for i in hc_barcodes_batch]
-                        X,y = _get_train_data(subset_X[hc_barcodes_batch],df,level,resample_method,max_training,in_danger_noise_checker, features_used)
-                        train_df = _map_training(subset_X[hc_barcodes_batch], X, df.index)
-                        train_dfs.append(train_df)
+                        X,y, traincounts = _get_train_data(subset_X[hc_barcodes_batch],df,level,resample_method,max_training,in_danger_noise_checker, features_used)
+                        train_dfs.append(pd.DataFrame.from_dict(dict(zip(df.index,traincounts)), orient="index", columns=["training"]))
                         clf.fit(X, y)
                         dfs.append(df)
-                        
                         del X, y
                     hierarchy.set_clf(level,clf,features_used)
                     df = pd.concat(dfs)
+                    
                     lost_items = hc_df[~hc_df.index.isin(df.index)].copy()
-                    lost_items[level+'_holdout'] = True
+                    lost_items[level+'_hold_out'] = True
+                    lost_items[level+'_traincounts'] = 0
+                    lost_items[level+'_train'] = False
                     df = pd.concat([df,lost_items])
+                    
                     df.reset_index(inplace=True)
-
+                    
                     df = df.groupby(['index',level+'_hc']).sum()
                     df.reset_index(level=1,inplace=True)
+                    
                     train_dfs.append(pd.DataFrame(0,index=lost_items.index,columns=[level+'_training']))
                     train_df = pd.concat(train_dfs)
-                    
                     train_df.reset_index(inplace=True)
                     train_df = train_df.groupby(['index']).sum()
                     df[level+'_traincounts'] = train_df['training'].astype(int)
                     df[level+'_train'] = train_df['training'].astype(bool)
                     del train_df                
-                    df[level+'_holdout'] = (df[level+'_holdout']) #& (df[level+'_hc'] != '?')
-                    
+                    df[level+'_hold_out'] = (df[level+'_hold_out']) #& (df[level+'_hc'] != '?')
 
                 logg.print(f"Merging data into adata.obsm['{key_added}']")
+                
                 total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
                                           right_index=True,suffixes=['_error',None]) 
+                
+                #spike ins might be holdout in one batch and trained with in another
+                if not hierarchy.get_info(level,'is_cutoff') and not batch_key is None and len(spike_in_barcodes) > 0:
+                    total_adata.obsm[key_added].loc[list(set(spike_in_barcodes)),level+'_hold_out'] = 0.0
+                
                 if not hierarchy.get_info(level,'is_cutoff'):
                     if hierarchy.get_info(level,'calibrate'):
                         logg.print(f'Running calibration on random forest')
@@ -500,7 +509,6 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         
                         cal_clf.fit(X_calibration, y_calibration)
                         hierarchy.set_clf(level,cal_clf,features_used)
-                        del X_calibration
                         
             if not hierarchy.get_info(level,'is_cutoff'):
                 df = pd.DataFrame(index=subset_adata.obs_names)
@@ -537,22 +545,24 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     cols = total_adata.obsm[key_added].columns
     try:
         logg.info(f'Converting columns in adata.obsm["{key_added}"] to savable dtypes...')
-        total_adata.obsm[key_added][cols[cols.str.contains('_class')]] = \
-        total_adata.obsm[key_added][cols[cols.str.contains('_class')]].astype(str).astype('category')
-        total_adata.obsm[key_added][cols[cols.str.contains('_hc')]] = \
-        total_adata.obsm[key_added][cols[cols.str.contains('_hc')]].astype(str).astype('category')
+        total_adata.obsm[key_added][cols[cols.str.endswith('_class')]] = \
+        total_adata.obsm[key_added][cols[cols.str.endswith('_class')]].astype(str).astype('category')
+        total_adata.obsm[key_added][cols[cols.str.endswith('_hc')]] = \
+        total_adata.obsm[key_added][cols[cols.str.endswith('_hc')]].astype(str).astype('category')
 
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_holdout')].fillna(False)
-        total_adata.obsm[key_added][cols[cols.str.contains('_holdout')]] = \
-        total_adata.obsm[key_added][cols[cols.str.contains('_holdout')]].astype(bool)
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_hold_out')] = \
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_hold_out')].fillna(False)
+        total_adata.obsm[key_added][cols[cols.str.endswith('_hold_out')]] = \
+        total_adata.obsm[key_added][cols[cols.str.endswith('_hold_out')]].astype(bool)
 
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_train')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.contains('_train')].fillna(False)
-        total_adata.obsm[key_added][cols[cols.str.contains('_train')]] = \
-        total_adata.obsm[key_added][cols[cols.str.contains('_train')]].astype(bool)
-        total_adata.obsm[key_added][cols[cols.str.contains('_traincounts')]] = \
-        total_adata.obsm[key_added][cols[cols.str.contains('_traincounts')]].astype(float)
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_train')] = \
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_train')].fillna(False)
+        total_adata.obsm[key_added][cols[cols.str.endswith('_train')]] = \
+        total_adata.obsm[key_added][cols[cols.str.endswith('_train')]].astype(bool)
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_traincounts')] = \
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_traincounts')].fillna(0.0)
+        total_adata.obsm[key_added][cols[cols.str.endswith('_traincounts')]] = \
+        total_adata.obsm[key_added][cols[cols.str.endswith('_traincounts')]].astype(float)
     except Exception as e:
         logg.error(f'Error converting adata.obsm[{key_added}] contents to savable categories',exc_info=1)
     total_adata.obs_names = total_adata.obs['MMoCHi_obs_names']
@@ -615,7 +625,7 @@ def _predict_probabilities_cutoff(X: sp.csr_matrix, clf,
         if prob < probability_cutoff:
             predictions[i] = "?"
     return full_probabilities, probabilities, predictions
-        
+
 def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                  level: str, data_key: Optional[str]=utils.DATA_KEY, 
                  plot: bool=False, reference: Optional[str]=None,
@@ -714,9 +724,9 @@ def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
 def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame, 
                     level: str, resample_method: Optional[str], 
                     max_training: Optional[int], in_danger_noise_checker: Union[bool,str], 
-                    features_used: List[str]) -> Tuple[sp.csr_matrix,pd.DataFrame]:
+                    features_used: List[str]) -> Tuple[sp.csr_matrix,pd.DataFrame, np.array]:
     """
-    Subsets sparse matrix of features into training and testing data
+    Subsets sparse matrix of features into training and testing data.  If SMOTE or its variations are used, _traincounts will refer to rebalanced training counts and will not account for generated training events.
     
     Parameters
     ----------
@@ -727,7 +737,7 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
     level: str
         Name of a classification level in the hierarchy to threshold and hc_threshold on
     resample_method: optional, str
-        Method used to resample high-confidence data prior to training, passed to _balance_training_classes. "Oversample" or None. Other methods are experimental. See _balance_training_classes and the imblearn package for details.
+        Method used to resample high-confidence data prior to training, passed to _balance_training_classes. "Oversample" or None. Other methods are experimental. See _balance_training_classes and the imblearn package for details. 
     max_training: optional, int
         If amount of training data is greater than max_training, a subset of the training data is randomly chosen to be used
     in_danger_noise_checker: bool or str
@@ -741,66 +751,48 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
         Resampled feature matrix for use in training
     y: np.array()
         Resampled classifications for use in training, corresponding to rows in X
+    traincounts_final:
+        array of length templin with the number of times each event is used in training
     """
     logg.print('Choosing training data...') # Randomly select high-confidence dataset for training purposes...80% train, 20% held out
-    templin[level+'_holdout'] = True
+    # creating an array to later fill with traincounts by applying masks in reverse order of y subsetting
+    traincounts_final = np.zeros(len(templin))
+    templin[level+'_hold_out'] = True
     mask = np.random.choice([False,False,False,False,True],size=sum(templin[level+'_hc'] != '?'))
-    templin.loc[templin[level+'_hc'] != '?',level+'_holdout'] = mask
+    templin.loc[templin[level+'_hc'] != '?',level+'_hold_out'] = mask
     logg.debug(f"Number of events {len(templin)}")
     logg.debug(f"X.shape: {X.shape}")
-    X = X[~templin[level+"_holdout"].to_numpy()]
-    y = templin[~templin[level+'_holdout']][level+'_hc'].values
+    X = X[~templin[level+"_hold_out"].to_numpy()]
+    y = templin[~templin[level+'_hold_out']][level+'_hc'].values
+    traincounts_mid = np.zeros(len(y))
+    idx_remove_list=[]
+    n_idxs = np.array(range(0,len(y)))
+    max_training_per_subset = int(max_training / len(set(y)))
     for i in set(y):
         # Remove from classes above max_training size
         total = sum(y==i)
-        if total > (max_training):
-            n_idxs = np.array(range(0,len(y)))
+        if total > (max_training_per_subset):
             idxs = n_idxs[y==i]
-            idx_remove = np.random.choice(idxs,total-max_training,replace=False)
-            idxs_remove = np.array([j in idx_remove for j in n_idxs])
-            y = y[~idxs_remove]
-            X = X[~idxs_remove]
-
+            idx_remove = np.random.choice(idxs,total-max_training_per_subset,replace=False)
+            idx_remove_list.append(idx_remove)
+    try:
+        idx_remove = np.concatenate(idx_remove_list)
+        idxs_remove_mask = np.array([j in idx_remove for j in n_idxs])
+    except:
+        idxs_remove_mask = np.array([False] * len(y))
+        logg.debug(f'None removed at {level}')
+    y = y[~idxs_remove_mask]
+    X = X[~idxs_remove_mask]
     logg.info(f"{len(y)} real cells in training set...")
     logg.print('Resampling...')
-    X,y = _balance_training_classes(X,y,features_used, resample_method,max_training=max_training,in_danger_noise_checker=in_danger_noise_checker)
+    X,y, tcounts = _balance_training_classes(X,y,features_used, resample_method,max_training=max_training,in_danger_noise_checker=in_danger_noise_checker) 
+    traincounts_mid[~idxs_remove_mask] = tcounts
+    traincounts_final[~templin[level+'_hold_out']] = traincounts_mid 
     logg.debug(f'Selected for training: {len(y)}, with {np.unique(y, return_counts=True)}')
     logg.print(f"Training with {len(y)} events after {resample_method} resampling...")
     assert len(set(y)) > 1, 'Must have more than 1 class to classify...'
 
-    return X,y
-
-def _map_training(X: sp.csr_matrix, training_X: Union[anndata.AnnData, sp.csr_matrix],
-                  obs_names: List[str]) -> pd.DataFrame:
-    """
-    Finds number of duplicates of each cell in training data and creates a DataFrame of
-    the names from X as indices and the number of that cell as the values
-    
-    https://stackoverflow.com/questions/13982804/find-given-row-in-a-scipy-sparse-matrix
-    assumes that cell data in X is unique and that this implementation of L2 produces an 
-    unique value for a given row of the sparse matrix
-    
-    Parameters
-    ----------
-    X: Sparse matrix
-        AnnData.X of all data with cells as rows and expression level as columns 
-    training_X: Sparse matrix or AnnData object
-        AnnData.X, subset of X, which is also a sparse matrix, duplicate cells allowed
-    obs_names: list of str
-        Labels for X object, which are used and indices of outputted DataFrame
-        
-    Returns
-    -------
-    df: pandas DataFrame
-        Indices are the obs_names and the values are the number of that cell in the training data
-    """
-    r = range(1,X.shape[1] + 1)
-    L2_training_X = training_X.multiply(1/(training_X.multiply(training_X).sum(axis=1))).multiply(r).sum(axis=1)
-    L2_X = X.multiply(1/(X.multiply(X).sum(axis=1))).multiply(r).sum(axis=1)
-    training_X_to_L2 = Counter(L2_training_X.A.flatten())
-    sample_counts = np.vectorize(training_X_to_L2.__getitem__)(L2_X.A.flatten()) 
-    return pd.DataFrame.from_dict(dict(zip(obs_names,sample_counts)), orient="index", columns=["training"])
-
+    return X, y, traincounts_final
 
 def _in_danger_noise(nn_estimator, samples: List[Tuple[anndata.AnnData, sp.csr_matrix]],
                      y: Union[anndata.AnnData, sp.csr_matrix]) -> np.array:
@@ -920,7 +912,7 @@ class _HVF_PCA_Neighbors():
         return self.neighbors.get_params(**kwargs)
 
 def _borderline_balance(nn_estimator, X: sp.csr_matrix,
-                       y: np.array, min_cluster_size: float=0.01) -> Tuple[sp.csr_matrix, np.array]:
+                       y: np.array, indices: np.array, min_cluster_size: float=0.01) -> Tuple[sp.csr_matrix, np.array, np.array]:
     """
     Uses nearest neighbors clustering to cluster data in y, and for clusters larger than the minimum cluster size, duplicates events in training data to equalize its representation.
     
@@ -932,6 +924,8 @@ def _borderline_balance(nn_estimator, X: sp.csr_matrix,
         .X column that references the same AnnData object as Y
     y
         Data to cluster and balance
+    indices
+        indices of initial X and y passed to _balance_training_classes for keeping track of training counts
     min_cluster_size
         Minimum proportion of all classes that a cluster must contain
     
@@ -941,6 +935,8 @@ def _borderline_balance(nn_estimator, X: sp.csr_matrix,
         .X column of clustered data
     y: np.Array
         Clustered data
+    indices
+        subsetted indices
     """
     leiden = nn_estimator.cluster()
     crosstab = pd.crosstab(leiden,y)
@@ -957,6 +953,7 @@ def _borderline_balance(nn_estimator, X: sp.csr_matrix,
                     mask = (leiden==i)&(y==j)
                     X = sp.vstack([X]+[X[mask]]*mult,format='csr')        
                     y = np.hstack([y]+[y[mask]]*mult)
+                    indices = np.hstack([indices]+[indices[mask]]*mult)
                     leiden = np.hstack([leiden]+[leiden[mask]]*mult)
             leidens.append(i)
             
@@ -965,13 +962,14 @@ def _borderline_balance(nn_estimator, X: sp.csr_matrix,
         mult = int(np.ceil((.5*len(mask)/sum(mask))))
         X = sp.vstack([X]+[X[mask]]*mult,format='csr')        
         y = np.hstack([y]+[y[mask]]*mult)
+        indices = np.hstack([indices]+[indices[mask]]*mult)
         leiden = np.hstack([leiden]+[leiden[mask]]*mult)
-    return X, y
+    return X, y, indices
             
 def _balance_training_classes(X: sp.csr_matrix, y: np.array,
                               features_used: List[str], method: Optional[str]=None,
                               max_training: Optional[int]=None, 
-                              in_danger_noise_checker: Union[bool,str]=True) -> Tuple[sp.csr_matrix, np.array]:
+                              in_danger_noise_checker: Union[bool,str]=True) -> Tuple[sp.csr_matrix, np.array, np.array]:
     """
     Methods to balance classes, using the imblearn package. Consult their documentation for more details
     
@@ -984,7 +982,7 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
     features_used: Listlike of str
         List of features that were checked/used in the reduction process 
     method: str, possible methods: "undersample", 'resample', 'oversample', 'SMOTE', 'KMeansSMOTE', 'BorderlineSMOTE' ,None
-        Method used to balance training classes (over or undersampling). See imblearn for details.
+        Method used to balance training classes (over or undersampling). See imblearn for details. If SMOTE or its variations are used, _traincounts will refer to rebalanced training counts and will not account for generated training events.
     max_training: int
         Maximum length of y data to be used in training, if len(y) > max_training will randomly subsample x and y
     in_danger_noise_checker: bool or str, if str can include "danger", "noise", or both
@@ -997,7 +995,11 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
         Resampled feature matrix, with balanced classes
     y: np.array()
         Resampled classifications for use in training, corresponding to rows in X
+    traincounts: 
+        len(x) with the number of times each value is sampled
     """
+    full_indices = np.array(range(len(y)))
+    full_len = len(y)
     if in_danger_noise_checker or method in ['SMOTE','BorderlineSMOTE','KMeansSMOTE']:
         logg.debug('begining HVF PCA NEIGHBORS')
         k_neighbors = _HVF_PCA_Neighbors(features_used,n_jobs=-1,n_neighbors=10).fit(X)
@@ -1011,6 +1013,7 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
         logg.debug(pd.crosstab(danger_or_noise,y))
         if 'noise' in in_danger_noise_checker:
             if set(y[danger_or_noise != 2]) == set(y):
+                full_indices = full_indices[danger_or_noise != 2]
                 y = y[danger_or_noise != 2]
                 X = X[danger_or_noise != 2]
                 if not k_neighbors.leiden is None:
@@ -1019,21 +1022,24 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
             else:
                 logg.info('Could not remove noise, as it would remove a category')
         else:
-            logg.print('Not finding noise')
+            logg.print('Not looking for noise')
         if 'danger' in in_danger_noise_checker:
             if sum(danger_or_noise) > 0:
-                X = sp.vstack([X]+[X[danger_or_noise==1]]*5,format='csr')     
-                y = np.hstack([y]+[y[danger_or_noise==1]]*5)
+                X = sp.vstack([X]+[X[danger_or_noise==1]]*4,format='csr')     
+                y = np.hstack([y]+[y[danger_or_noise==1]]*4)
+                full_indices = np.hstack([full_indices]+[full_indices[danger_or_noise==1]]*4)
                 if not k_neighbors.leiden is None:
-                    k_neighbors.leiden = np.hstack([k_neighbors.leiden]+[k_neighbors.leiden[danger_or_noise==1]]*5)
+                    k_neighbors.leiden = np.hstack([k_neighbors.leiden]+[k_neighbors.leiden[danger_or_noise==1]]*4)
             else:
                 logg.debug('No "in danger" found')
         else:
-            logg.debug('Not finding danger')
+            logg.debug('Not looking for danger')
             
         if 'rebalance' in in_danger_noise_checker:
-            X, y = _borderline_balance(k_neighbors,X,y)
-
+            X, y, full_indices = _borderline_balance(k_neighbors,X,y, full_indices)
+    
+    
+    n_tcounts = len(y)
     if method == "oversample":
         sample = imblearn.over_sampling.RandomOverSampler()
     elif method == "resample":
@@ -1046,11 +1052,25 @@ def _balance_training_classes(X: sp.csr_matrix, y: np.array,
         sample = imblearn.over_sampling.BorderlineSMOTE(k_neighbors=k_neighbors,n_jobs=-1)
     elif method == "KMeansSMOTE":
         sample = imblearn.over_sampling.KMeansSMOTE(k_neighbors=k_neighbors,n_jobs=-1) 
+    else:
+        logg.info('No sampling method chosen')
     if method in ["undersample",'resample','oversample','SMOTE','KMeansSMOTE','BorderlineSMOTE']:
         X, y = sample.fit_resample(X, y)
-    if not max_training is None and len(y) > max_training:
-        X,y = sklearn.utils.resample(X,y, replace=False,n_samples=max_training)
-    return X,y
+        if 'SMOTE' in method:
+            training_indices = np.array(range(n_tcounts))
+        else:
+            training_indices = sample.sample_indices_
+    else:
+        training_indices = np.array(range(n_tcounts))
+    
+    
+    if not max_training is None and len(y) > max_training: 
+        X,y, training_indices = sklearn.utils.resample(X,y, training_indices, replace=False,n_samples=max_training)
+
+    training_indices = full_indices[training_indices]
+    tcounts = np.bincount(training_indices.astype(int),minlength=full_len)
+    tcounts = tcounts
+    return X, y, tcounts
 
 def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
                    confidence_column: str='certainty', conf_drops: Union[float, List[float]]=None,

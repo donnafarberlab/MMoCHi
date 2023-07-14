@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.2.2' 
+VERSION = '0.2.3' 
 DESCRIPTION = 'MultiMOdal Classifier HIerarchy (MMoCHi)'
 LONG_DESCRIPTION = 'A reference-free hierarchical classification system designed for high-confidence thresholding of cell populations on CITE-Seq and training of random forests.'
 
@@ -13,11 +13,10 @@ setup(  name="mmochi",
         packages=find_packages(),
         url = 'https://github.com/donnafarberlab/MMoCHi.git',
         keywords=['scRNA','CITE-Seq','Classifier','Multimodal'],
-	    install_requires=['pandas>=1.0.5','numpy>=1.21.0','scikit-learn>=1.1.2','imbalanced-learn>=0.9.1',
+	    install_requires=['pandas>=1.0.5','numpy>=1.21.0','scikit-learn>=1.1.2','imbalanced-learn>=0.11.0',
                           'scipy>=1.8.0','scanpy>=1.7.2','anndata>=0.8.0','treelib>=1.6.1',
                           'matplotlib>=3.5.1','ipywidgets>=7.7.0','pydot>=1.4.2','ipython>=8.4.0',
-                          'tqdm>=4.64.0','leidenalg>=0.8.9',
-                          'scikit-learn<1.3'], # Temporary measure as imbalance-learn is not compatible with scikit-learn version 1.3.0.
+                          'tqdm>=4.64.0','leidenalg>=0.8.9'],
         extras_require= {'landmarking':['scikit-fda>=0.5','seaborn>=0.11.2'],
                          'tutorials':['harmonypy'],
                          'docs':['sphinx==6.2.1','sphinx-rtd-theme==1.2.1','m2r2==0.3.2',

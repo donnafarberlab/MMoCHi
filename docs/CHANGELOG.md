@@ -16,6 +16,26 @@ pip install .
 ---
 ## Current version
 
+### [0.2.3] - 14JUL23
+
+#### Fixed 
+
+- Optimized a few steps to reduce peak memory usage by ~30% 
+
+- Directly calculate train_counts (instead of mapping backwards)—improving accuracy in a few edge cases.
+
+- Fixed error where `_traincounts` would be set to 1.
+
+- Clarified nomenclature: events spiked in to train one batch and used as hold out in another are now set as `_hold_out=False`.
+
+- Updated pytests for additional debugging clarity.
+
+- Fixed typos in Input_Output_Specs.md
+
+- Removed temporary requirement limiting scikit-learn to below 1.3.0, as imbalanced-learn has updated to support scikit-learn==1.3.0
+
+- Adjusted dependencies specified for tox testing
+
 ### [0.2.2] - 30JUN23
 
 #### Added

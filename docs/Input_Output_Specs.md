@@ -8,8 +8,6 @@ MMoCHi expects an `anndata.AnnData` object ([AnnData](https://anndata.readthedoc
 
 Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` objects into the right format, although you should check to make sure the object is correctly formatted and data are correctly transformed. 
 
-## Expected Inputs
-
 ### `.X`
 - In the `.X` of the `AnnData`, MMoCHi classification requires library-size normalized feature expression
     - Most often this would be log-normalized gene expression stored in a `scipy.sparse_matrix` but could also be stored in a `numpy.array`
@@ -131,10 +129,10 @@ If you have a `mudata.MuData` object, you can follow the following code, replaci
 import mudata as md
 mdata = md.read_h5mu('mudata.h5mu')
 
-adata = madata.mod['gex'].copy()
-# Note if madata.mod['adt'].X is a sparse matrix, you may need to use protein.X.A
-adata.obsm['protein'] = pd.DataFrame(madata.mod['adt'].X, 
-                                     index=madata.mod['adt'].obs_names, 
-                                     columns=madata.mod['adt'].var_names)
+adata = mdata.mod['gex'].copy()
+# Note if mdata.mod['adt'].X is a sparse matrix, you may need to use protein.X.A
+adata.obsm['protein'] = pd.DataFrame(mdata.mod['adt'].X, 
+                                     index=mdata.mod['adt'].obs_names, 
+                                     columns=mdata.mod['adt'].var_names)
 adata.write_h5ad('mmochi_formatted.h5ad')
 ```
