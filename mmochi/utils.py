@@ -8,7 +8,6 @@ import scanpy as sc
 import gc
 from .logger import logg
 import warnings
-import matplotlib.pyplot as plt
 
 DATA_KEY = 'landmark_protein'
 BATCH_KEY = 'batch'
@@ -327,13 +326,10 @@ def umap_thresh(adata: anndata.AnnData, h,
         all_markers = []
         for classification in h.get_classifications():
             for mm in h.tree[classification].data.markers:
-                if mm in adata.obs.columns:
-                    logg.warn(f"{mm} found in adata.obs.columns, skipping...")
-                else:
-                    all_markers.append(mm)
+                all_markers.append(mm)
         markers = list(set(all_markers))
     
-    for mm in markers:        
+    for mm in markers:
         if mm.endswith("_lo") or mm.endswith("_hi"):
             m = mm[:-3]
         else:
@@ -345,7 +341,6 @@ def umap_thresh(adata: anndata.AnnData, h,
             to_del = True
         except:
             m = marker(adata,m.split('_gex')[0],None)
-
         data = get_data(adata,m,data_key)
         for mask,b in zip(*batch_iterator(adata,batch_key)):
             t = h.get_threshold_info(mm,None,b,flexible_batch=True)[1]
@@ -370,7 +365,6 @@ def umap_thresh(adata: anndata.AnnData, h,
                 cmap = ListedColormap(newcolors)
 
             sc.pl.embedding(adata[mask],basis = umap_basis,color=m,cmap=cmap,vmax=max(data),vmin=0,title=f'{b} {mm}',**kwargs)
-            plt.show()
             gc.collect()
         if to_del:
             del adata.obs[m]

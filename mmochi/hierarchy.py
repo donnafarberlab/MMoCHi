@@ -736,8 +736,7 @@ class Hierarchy:
                            data_key: str=utils.DATA_KEY, batch_key: str=None,
                            mode: str='fill in', interactive: bool=True,
                            plot: bool=True, limit: Optional[Union[str, List[str]]]=None, 
-                           batch_marker_order: bool=False, skip: List[str]=[],
-                           bins: int=100):
+                           batch_marker_order: bool=False, skip: List[str]=[]):
         '''
         Runs thresholding using the `thresholding.threshold()` function. First uses `mmc.get_data` to search for marker.
         If marker is not found in AnnData, gives up and ask whether to label it as interactive or not.
@@ -765,8 +764,6 @@ class Hierarchy:
             Whether to order by batch first or marker first (as the outer loop). If true, marker is the outer loop.
         skip
             Markers to skip for thresholding
-        bins
-            The number of bins to include in the histograms
         '''
         all_markers, all_levels = [], []
         for classification in self.get_classifications():
@@ -819,7 +816,7 @@ class Hierarchy:
                 threshold = thresholding.threshold(marker,adata[mask],data_key,preset_threshold=t,
                                          include_zeroes=False, n=0, force_model=False,
                                          plot=plot, interactive=interactive, fancy='fancy' in mode, run=False,
-                                         title_addition= '' if batch_key is None else batch,bins=bins)
+                                         title_addition= '' if batch_key is None else batch)
                 if not 'fancy' in mode:
                     print(threshold)
                     self.set_threshold(marker,threshold, False, level, batch)

@@ -16,21 +16,6 @@ pip install .
 ---
 ## Current version
 
-### [0.2.3dev] - In progress
-
-#### Fixed 
-
-- Updated displays in tutorial notebooks to reflect bug fixes from 0.2.3
-
-- Improved `mmc.utils.umap_thresh()` by removing features that are columns in the `.obs` from being selected when `markers` is set to `None` and to add a `plt.show()` to the loop so that plots are shown progressively.
-
-- Updated `Python3_8_requirements.txt` to remove unnecessary packages and convert to conda format
-
-#### Added
-
-- Added `bins` parameter to threshold plotting so that users can control the number of histogram bins
-
-
 ### [0.2.3] - 14JUL23
 
 #### Fixed 
