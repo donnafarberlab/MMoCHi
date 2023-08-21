@@ -58,7 +58,7 @@ def _run_threshold(data: np.array, thresh: Sequence[Union[int,float]]) -> np.arr
 
 def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
                     msw: Tuple[Tuple[float], Tuple[float],Tuple[float]], markname_full: str,
-                    title_addition: str='') -> None:
+                    title_addition: str='', bins: int=100) -> None:
     '''
     Using the thresholds provided, performs and plots the histogram of the thresholds. If msw is provided, plots the Gaussian mixture model as well.
     
@@ -79,6 +79,8 @@ def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
         Name of the marker, to be used in the title of the graph
     title_addition
         Other information you would like to include in the title after the marker name
+    bins
+        The number of bins to plot in the histogram
     '''
     mask = data > 0
     data = data[mask]
@@ -86,7 +88,7 @@ def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
     fig = plt.figure(figsize=(8,2),dpi=75)
     hist = plt.hist((data[data>=max(thresh)],data[data<=min(thresh)],
                      data[(data>min(thresh)) & (data<max(thresh))]),
-                     bins=100,stacked=True,density=True, color=['#ff7f0e',  '#1f77b4', '#2ca02c']) 
+                     bins=bins,stacked=True,density=True, color=['#ff7f0e',  '#1f77b4', '#2ca02c']) 
     if not msw is None:
         (m,s,w) = msw
         x = np.linspace(0,max(data), 10000)
@@ -190,7 +192,8 @@ def threshold(markname: str, adata: anndata.AnnData,
               force_model: bool=False, plot: bool=True,
               title_addition: str='', interactive: bool=True,
               fancy: bool=False,
-              run: bool=False) -> Union[Tuple[float,float], Tuple[Tuple[float,float], List[str]]]:
+              run: bool=False,
+              bins: int=100) -> Union[Tuple[float,float], Tuple[Tuple[float,float], List[str]]]:
     '''
     Performs thresholding for marker, displays expression distribution (colored by "pos", "?", and "neg") for visualization and interactive adjustment, and optionally returns thresholds and thresholded events.
     Thresholded events are returned as a list of "pos" for positive (at or above the higher threshold), "neg" for 
@@ -225,6 +228,8 @@ def threshold(markname: str, adata: anndata.AnnData,
         Whether to create adjustable float sliders to enter thresholds. Returns a list of float sliders. This should only be used by the run_all_thresholds command.
     run
         Whether to run the thresholding to return thresholded data
+    bins 
+        The number of bins to plot in the histogram
     Returns
     -------
     thresh:
@@ -240,7 +245,7 @@ def threshold(markname: str, adata: anndata.AnnData,
         ending = ''
     data, thresh, msw, markname_full = _calc_threshold(markname,adata,data_key,n,include_zeroes,preset_threshold=preset_threshold, force_model=force_model)
     if plot:
-        _plot_threshold(data, thresh, msw, markname_full+ending,title_addition=title_addition)
+        _plot_threshold(data, thresh, msw, markname_full+ending,title_addition=title_addition, bins=bins)
     if fancy:
         return _fancy_interactive_threshold(thresh, max(data))
     if interactive:
