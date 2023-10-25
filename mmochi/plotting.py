@@ -178,7 +178,7 @@ def _mask_adata(adata: anndata.AnnData, level: str,
     hc_only
         Whether to only include high-confidence data points that were called as pos or neg for the specified level of classification
     holdout_only
-        Whether to only include data only non-training data for the specified level of classification
+        Whether to only include data only non-training data for the specified level of classification. If string supplied,  adata.obsm[key_added][level+holdout_only] is used to mask adata
     key_added
         Key in .obsm where one checks for high-confidence and untrained data 
     
@@ -190,8 +190,10 @@ def _mask_adata(adata: anndata.AnnData, level: str,
     mask = [True] * adata.n_obs
     if hc_only:
         mask = mask & (adata.obsm[key_added][level+'_hc'] != "?").values & ~(adata.obsm[key_added][level+'_hc']).isna()
-    if holdout_only:
-        mask = mask & (adata.obsm[key_added][level+'_hold_out']).values
+    if holdout_only == True:
+        mask = mask & (adata.obsm[key_added][level+'_holdout']).values
+    elif isinstance(holdout_only, str):
+        mask = mask & (adata.obsm[key_added][holdout_only]).values & ~(adata.obsm[key_added][level+'_class']).isna()
     return adata[mask]
 
 def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]], 
@@ -238,9 +240,47 @@ def plot_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
     _check_pdf_close(save)
     return
 
-def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only=True, **kwargs):
+def plot_external_confusion(adata: anndata.AnnData, levels: Union[str, List[str]],
+                            hierarchy=None,true_labels: str='_hc', 
+                            key_added: str='lin',save: str=None,
+                            show: bool=True,title_addition: str=None,
+                            **kwargs):
     '''
-    Determine the performance at a single level by creating a confusion plot using high-confidence thresholds as truth.
+    Determine the performance by creating a confusion plot using high-confidence thresholds or supplied true labels as truth on data held out from all training processes.
+    
+    Parameters
+    ----------
+    adata
+        Object containing a DataFrame in the .obsm[key_added] specifiying the results of high_confidence thresholding, training, and classification
+    levels
+        Level or levels of the classifier to create confusion plots for, "all" creates plots for whole hierarchy
+    hierarchy
+        Hierarchy object with classification level information
+    true_labels
+        Column name in adata.obsm[level+true_labels] of "true" event labels, by default high confidence thresholds will be used
+    key_added
+        Key in .obsm, where information on whether a level had a high-confidence call or was training data
+    save
+        Filepath to pdf where the plots will be saved
+    show
+        Whether to show the saved confusion plots
+    title_addition
+        Phrase to add to the title of the confusion plots
+    **kwargs are passed to sklearn.metrics.ConfusionMatrixDisplay.from_predictions()
+    '''
+    levels = _check_levels(levels,hierarchy,False)
+    save = _check_pdf_open(save)
+    for level in levels:
+        fig, ax = _plot_confusion(adata,level,hierarchy,key_added,holdout_only='external_holdout', true_labels=true_labels, **kwargs)
+        if not title_addition is None:
+            ax.set_title(ax.get_title()+f'\n{title_addition}')
+        _save_or_show(save,show)
+    _check_pdf_close(save)
+    return
+
+def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only: Union[str,bool]=True, true_labels='_hc', **kwargs):
+    '''
+    Determine the performance at a single level by creating a confusion plot using high-confidence thresholds or adata.obs[true_labels] as truth.
     
     Parameters
     ----------
@@ -253,7 +293,9 @@ def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only=
     key_added
         Key in .obsm, where information on whether a level had a high-confidence call or was training data
     holdout_only
-        Whether to only look at the results that were not trained on
+        Whether to only look at the results that were not trained on or if a column is supplied, the column in .obsm[key_added] to check
+    true_labels
+        name in .obsm[level+true_labels] where "true" cell type labels exist
     **kwargs are passed to sklearn.metrics.ConfusionMatrixDisplay.from_predictions()
     Returns
     -------
@@ -261,8 +303,10 @@ def _plot_confusion(adata, level, hierarchy=None, key_added='lin', holdout_only=
     '''
     adata = _mask_adata(adata, level, hc_only=True, holdout_only=holdout_only, key_added=key_added)
     unseen_data = adata.obsm[key_added]
-    statuses = unseen_data[level+'_hc'].unique() 
-    (unseen_hc,unseen_cl) = zip(*[(i,j) for i,j in zip(unseen_data[level+'_hc'], unseen_data[level+'_class']) if i in statuses]) 
+    if true_labels == '_hc':
+        unseen_data = unseen_data[(unseen_data[level+true_labels] != '?').values]
+    statuses = unseen_data[level+true_labels].unique() 
+    (unseen_hc,unseen_cl) = zip(*[(i,j) for i,j in zip(unseen_data[level+true_labels], unseen_data[level+'_class']) if i in statuses]) 
     fig, ax = plt.subplots(figsize=(4,4))
     try:
         labels = hierarchy.subsets_info(level).keys()

@@ -1,6 +1,6 @@
 # Example Hierarchies
 
-A lot of care goes into designing MMoCHi hierarchies, and since their gating strategies are easily distributable. We hope that these hierarchies will provide a good jumping off point, but expect that these will take customization to your datasets (since every dataset will have different cell type compositions and markers may be variably effective across datasets).
+A lot of care goes into designing MMoCHi hierarchies. Since our hierarchies and gating strategies are easily distributable, we've created this centralized place for sharing them. We hope that these examples will provide a good jumping off point, but expect that these will take customization to apply to your datasets (since every dataset will have different cell type compositions and markers may be variably effective across datasets).
 
 We hope to continually update this page with new hierarchies that we or members of the community use! Details on how to submit your hierarchy to this list can be found [below](#submitting-a-mmochi-hierarchy).
 
@@ -42,7 +42,8 @@ h.add_classification('cd8_mem','CD8 T cell',['CD62L','CD45RA'],clf_kwargs={'max_
 h.add_subset('cd8_n','cd8_mem',['pos','pos'])
 h.add_subset('cd8_cm','cd8_mem',['pos','neg'])
 h.add_subset('cd8_em','cd8_mem',['neg','neg'])
-h.add_subset('cd8_emra','cd8_mem',['neg','pos'])            
+h.add_subset('cd8_emra','cd8_mem',['neg','pos'])  
+
 ```  
 
 ### Human immune subsets (v1)
@@ -158,7 +159,8 @@ h.add_subset('nk_cd56dim','nk_ilcs',dict(any_of=['FCGR3A_gex','GZMB_gex','EOMES_
 h.add_subset('nk_cd56hi','nk_ilcs',dict(any_of=['GZMK_gex','EOMES_gex','CD56','CD335_NKp46'],n=2, neg=['FCGR3A_gex','KIT_gex','IL4I1_gex','RORC_gex','NCR2_gex','CD103','CD16']))
 
 h.add_subset('ilc_1','nk_ilcs',dict(any_of=['NCR2_gex'], neg=['FCGR3A_gex' ,'EOMES_gex','KIT_gex']))
-h.add_subset('ilc_3','nk_ilcs',dict(any_of=['IL7R_gex','KIT_gex','IL4I1_gex','RORC_gex'], neg=['FCGR3A_gex', 'GZMK_gex', 'GZMH_gex', 'GZMB_gex','EOMES_gex','NCR2_gex'],n=2))          
+h.add_subset('ilc_3','nk_ilcs',dict(any_of=['IL7R_gex','KIT_gex','IL4I1_gex','RORC_gex'], neg=['FCGR3A_gex', 'GZMK_gex', 'GZMH_gex', 'GZMB_gex','EOMES_gex','NCR2_gex'],n=2))
+
 ```
 
 ## Submitting a MMoCHi hierarchy

@@ -463,7 +463,7 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
                           data_key_colors: Union[List[str], List[Tuple[float]]]=['b','r'],
                           aspect: Union[float,int]=3, height: Union[float,int]=.85, 
                           save_fig: str=None, subsample: Union[float, int]=1,
-                          bw_adjust: Union[float,int]=0):
+                          bw_adjust: Union[float,int]=0,exclude_zeroes: bool=True):
     '''
     Method to plot multiple density plots of positive and negative peaks for batches and [data_keys]s with properly placed labels. Method will create density plots for all items in a batch to help visualize the process of realignment (landmark registration)
     
@@ -491,7 +491,8 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
         Fraction of adata data to use for plotting. If less than 1 that fraction will be chosen randomly
     bw_adjust
         Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborne.kdeplot for more details
-        
+    exclude_zeroes
+        If True, only displays non-zero events, which can be useful for visualization of data with many events with zero protein expression
     Returns
     -------
     None. Plots labeled stacked density plots of positive and negative peaks to compare [batch]es across [data_key]s
@@ -513,7 +514,8 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
             df[markname_full] = data
             markname_full_list.append(markname_full)
     df = df.melt(id_vars = batch_key)
-    df = df[df.value>0]
+    if exclude_zeroes:
+        df = df[df.value>0]
     df.sort_values(['variable',batch_key],inplace=True)
     sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0), 'axes.linewidth':2})
     df = df.sample(frac=subsample)
@@ -572,7 +574,7 @@ def density_plot(adata: anndata.AnnData, marker: str,
         Use 0 to plot a histogram.
     step
         Size of x ticks on histogram.   
-    exclude_zeroes:
+    exclude_zeroes
         If True, only displays non-zero events, which can be useful for visualization of data with many events with zero protein expression
     '''
   
@@ -681,7 +683,3 @@ def load_peak_overrides(path: str):
     with open(path, "r") as fp:
         peak_overrides = json.load(fp)
     return peak_overrides
-
-
-    
-

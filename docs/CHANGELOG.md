@@ -16,9 +16,35 @@ pip install .
 ---
 ## Current version
 
-### [0.2.3dev] - In progress
+### [0.3.0dev] - 24OCT23
+
+#### Added
+
+- Users can now optionally define an "external hold out". This hold out is defined before high-confidence thresholding, and is thus can be isolated from all steps of MMoCHi's training and preprocessing. While "internal hold out" (previously the only available hold out) is used to evaluate the fit of MMoCHi's random forests at each level, external hold out can be used to evaluate MMoCHi's overall classification performance.
+
+- The new function `mmc.define_external_hold_out()` allows users to define a random subset of the data to be used as an external hold out. This adds a new column to the `.obsm['lin']` called `external_hold_out`.
+
+- Added `h.publication_export()` a helper function (currently in beta) for exporting supplementary tables describing the design of a MMoCHi hierarchy and thresholds used. 
+
+- Added a copy button to all code blocks in the documentation
+
+- Added a page to documentation for sharing default `marker_bandwdith` values for various antibodies
 
 #### Fixed 
+
+- Fixed how calibration uses held-out data, such that hold out data used for calibration is now separate from the data used for performance validation. In the case where calibration (or hyperparameter optimization, once released), is enabled, the internal hold out data is split in half. The half used for optimization/calibration is now indicated by a new column in the `.obsm['lin']`, called `[level]_opt_hold_out`. 
+
+- Added requirement for matplotlib above version 3.6.1, as lower versions break scanpy's handling of cmaps (Todo: check again)
+
+- Added requirement capping AnnData below version 0.10.2, as that version breaks anndata.concat (due to bugfix #1189) (Todo: check again)
+
+- Added requirement for scanpy to be at or above version 1.8.0, as there were strange issues with scanpy import a lower versions. (Todo: check again)
+
+#### Changed
+
+- 'hold_out' was replaced with 'holdout' for consistency (this was previously only partially executed in the codebase)
+
+### [0.2.3dev] - 21AUG23
 
 - Updated displays in tutorial notebooks to reflect bug fixes from 0.2.3
 
@@ -50,6 +76,7 @@ pip install .
 - Removed temporary requirement limiting scikit-learn to below 1.3.0, as imbalanced-learn has updated to support scikit-learn==1.3.0
 
 - Adjusted dependencies specified for tox testing
+
 
 ### [0.2.2] - 30JUN23
 

@@ -233,7 +233,10 @@ class Hierarchy:
             tag = tag + f"=={values['OTHER']} ".join(values['other']) + f"=={values['OTHER']} "
 
         if 'any_of' in values:
-            tag = tag[:-1] + ') and ['
+            if 'neg' in values.keys() or 'pos' in values or 'other' in values:
+                tag = tag[:-1] + ') and ['
+            else:
+                tag = tag[:-1] + '['
             if not type(values['any_of'][0]) is list:
                 values['any_of'] = [values['any_of']]
             if not 'n' in values:
@@ -736,8 +739,8 @@ class Hierarchy:
                            data_key: str=utils.DATA_KEY, batch_key: str=None,
                            mode: str='fill in', interactive: bool=True,
                            plot: bool=True, limit: Optional[Union[str, List[str]]]=None, 
-                           batch_marker_order: bool=False, skip: List[str]=[],
-                           bins: int=100):
+                           batch_marker_order: bool=False, skip: List[str]=[], bins: int=100,
+                          external_holdout: bool=False, key_added: str = 'lin'):
         '''
         Runs thresholding using the `thresholding.threshold()` function. First uses `mmc.get_data` to search for marker.
         If marker is not found in AnnData, gives up and ask whether to label it as interactive or not.
@@ -767,7 +770,18 @@ class Hierarchy:
             Markers to skip for thresholding
         bins
             The number of bins to include in the histograms
+        external_holdout
+            If external hold out was defined in adata.obsm[key_added], removes external hold out from automatic threshold calculations and from graphs used for manual thresholding
+        key_added
+            If external_holdout is true, the place in adata.obsm[key_added] to search for the external hold out column (bool T F column used to indicate whether an event should be set aside for hold out)
         '''
+        if external_holdout:
+            try:
+                 external_holdout_mask = adata.obsm[key_added]['external_holdout']
+            except:
+                assert False, f'Did not create external hold out in adata.obsm[{key_added}]'
+        else:
+            external_holdout_mask = [True] * len(adata)
         all_markers, all_levels = [], []
         for classification in self.get_classifications():
             for marker in self.tree[classification].data.markers:
@@ -793,7 +807,7 @@ class Hierarchy:
         if 'fancy' in mode:
             fancy_resolution = []
 
-        batch_iterable = zip(*utils.batch_iterator(adata,batch_key))
+        batch_iterable = zip(*utils.batch_iterator(adata[external_holdout_mask],batch_key))
         marker_iterable = zip(markers, levels)
         if batch_marker_order:
             iterable = itertools.product(batch_iterable,marker_iterable)
@@ -816,7 +830,7 @@ class Hierarchy:
             if not level is None:
                 print(f'On level {level}')
             try: 
-                threshold = thresholding.threshold(marker,adata[mask],data_key,preset_threshold=t,
+                threshold = thresholding.threshold(marker,adata[external_holdout_mask][mask],data_key,preset_threshold=t,
                                          include_zeroes=False, n=0, force_model=False,
                                          plot=plot, interactive=interactive, fancy='fancy' in mode, run=False,
                                          title_addition= '' if batch_key is None else batch,bins=bins)
@@ -1065,6 +1079,90 @@ class Hierarchy:
             string_graphviz = string_graphviz + '\t' + c + '\n'
         string_graphviz = string_graphviz + '}'
         return string_graphviz   
+    
+    def publication_export(self, batches: Optional[List[str]]=None, filepath: str=''):
+        """
+        Creates a formatted csv files of your hierarchy, including its high confidence definitions and thresholds. 
+        The resulting file will have two sheets, one with subset name, parent subset, positive features, and negative features. 
+        The other with thresholds for each marker for each of the batches.
+    
+        Currently in beta.
+        Assumes no "+" symbol present in feature names. 
+
+        Parameters
+        ----------
+        h
+            Hierarchy object to use for definitions
+        batches
+            A list of batches to find thresholds for. If None, just creates thresholds for a single batch
+        filepath
+            path where the xlsx file is saved
+        """
+        # Create the hierarchy sheet
+        df = []
+        for node in self.tree.all_nodes():
+            row = []
+            if isinstance(node.data, Subset) and node.identifier != "All":
+                row.append(node.identifier)
+                row.append(self.classification_parents(node.identifier)[1])
+                feature_line = node.tag.replace(node.identifier + ' ', '')
+                if 'True' in feature_line:
+                    row.append('*' + feature_line[1:feature_line.find('==True')] + '*')
+                    row.append('')
+                elif 'False' in feature_line:
+                    row.append('')
+                    row.append('*' + feature_line[1:feature_line.find('==False')] + '*')
+                else:
+                    pos = ''
+                    neg = ''
+                    if feature_line[0] == '(':
+                        singles = feature_line[1:feature_line.find(')')].split(' ')
+                        feature_line = feature_line.replace(feature_line[:feature_line.find(')')+ 6], '')
+                        carry_over = '' #in case feature names have spaces
+                        for single in singles:
+                            single = carry_over + single
+                            if single[-1] == '+':
+                                pos += ', ' + single[:len(single) - 1]
+                                carry_over = ''
+                            elif single[-1] == '-':
+                                neg += ', ' + single[:len(single) - 1]
+                                carry_over = ''
+                            else:
+                                carry_over = single
+                        pos = pos.replace(', ', '', 1)
+                        neg = neg.replace(', ', '', 1)
+
+                    if '+' in feature_line:
+                        pos += feature_line.replace('[', '').replace(']', '').replace('+)',')').replace('+',',')
+                    else:
+                        neg += feature_line.replace('[', '').replace(']', '').replace('- ', ', ').replace('-)',')')
+                    row.append(pos)
+                    row.append(neg)
+            if len(row) > 0:
+                df.append(row)
+        df = pd.DataFrame(df, columns=['Subset','Parent','Positive Features','Negative Features'])
+        
+        # Create the thresholds sheet
+        if batches is None:
+            batches = ['']
+        else:
+            batches = [' '+batch for batch in batches]
+        columns = []
+        for batch in batches:
+            columns.extend(['Negative Threshold'+batch, 'Positive Threshold'+batch])
+
+        thresh_df = pd.DataFrame(columns=columns)
+        for level in self.get_classifications():
+            markers = self.classification_markers(level)[0]
+            for i in markers:
+                for batch in batches:
+                    thresh = sorted(self.get_threshold_info(i,None,batch)[1])
+                    thresh_df.loc[i,['Negative Threshold'+batch, 'Positive Threshold'+batch]] = thresh        
+        
+        # Save the csv files
+        df.to_csv(filepath+'_hierarchy.csv')
+        thresh_df.to_csv(filepath+'_thresholds.csv')
+        return
 
 class Subset:
     '''

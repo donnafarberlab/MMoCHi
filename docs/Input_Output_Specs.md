@@ -55,8 +55,10 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
 - Named `lin` by default (for lineage), this is a `pandas.DataFrame`, indexed by `anndata.AnnData.obs_names`. 
     - At each level of the hierarchy, columns will be added to this DataFrame containing important results and information.
     - After training a classifier, the `.obsm['lin']` will include columns for: 
+        - `external_holdout`: Bool, If define_external_holdout is run will be True for random fraction not used for any thresholding, training, hyperparameter optimization, or calibration.
         - `{level}_hc`: String, High-confidence threshold identity (either a cell type, '?' (for events not identified as a high-confidence cell type), or 'nan' for cells not part of the parent subset)
         - `{level}_holdout`: Bool, True for events that are *explicitly* held out from training (i.e. not used for random forest training, nor training data selection)
+        - `{level}_opt_holdout`: Bool, If calibration or hyperparameter optimization is used, True for events that are *explicitly* held out from training and testing, but are used for calibration and hyperparameter optimization
         - `{level}_train`: Bool, True for events that are used for random forest training
         - `{level}_traincounts`: Integer, The number of times an event was duplicated within the training dataset.
     - After using the classifier for prediction, the `.obsm['lin']` will include columns for: 

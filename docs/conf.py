@@ -36,7 +36,6 @@ repository_url = "https://github.com/donnafarberlab/MMoCHi"
 
 version = mmochi.__version__
 release = version
-# release = '0.2.2'
 
 # -- General configuration ---------------------------------------------------
 
@@ -46,7 +45,7 @@ release = version
 
 extensions = ['sphinx.ext.napoleon','m2r2','sphinx.ext.autodoc','sphinx_autodoc_typehints',
               'sphinx_rtd_theme','nbsphinx','sphinx.ext.autosectionlabel','sphinx.ext.autosummary',
-              'sphinx_new_tab_link', 'sphinx.ext.intersphinx']
+              'sphinx_new_tab_link', 'sphinx.ext.intersphinx','sphinx_copybutton']
 
 source_suffix = ['.rst','.md']
 templates_path = ['_templates']
