@@ -16,7 +16,7 @@ pip install .
 ---
 ## Current version
 
-### [0.3.0dev] - 24OCT23
+### [0.3.0dev] - 07NOV23
 
 #### Added
 
@@ -30,6 +30,8 @@ pip install .
 
 - Added a page to documentation for sharing default `marker_bandwdith` values for various antibodies
 
+- Hyperparameter optimization, which can be activated using new parameters in `mmc.Hierarchy` (Todo: write tutorial)
+
 #### Fixed 
 
 - Fixed how calibration uses held-out data, such that hold out data used for calibration is now separate from the data used for performance validation. In the case where calibration (or hyperparameter optimization, once released), is enabled, the internal hold out data is split in half. The half used for optimization/calibration is now indicated by a new column in the `.obsm['lin']`, called `[level]_opt_hold_out`. 
@@ -39,6 +41,8 @@ pip install .
 - Added requirement capping AnnData below version 0.10.2, as that version breaks anndata.concat (due to bugfix #1189) (Todo: check again)
 
 - Added requirement for scanpy to be at or above version 1.8.0, as there were strange issues with scanpy import a lower versions. (Todo: check again)
+
+- Fixed formatting issues with hierarchy `.display()` method
 
 #### Changed
 

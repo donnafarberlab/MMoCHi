@@ -52,8 +52,17 @@ class Hierarchy:
         The default list of Subsets for which training events should be sampled with spike-ins from across batches, even if individual batches
         have enough events for training. This can be useful for cell types that are very heterogenous across batches.
     default_calibrate
-        Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect 
-        the percent of trees in agreement. Calibrated values more-closely reflect the percent of calls correctly made at any given confidence level.
+        Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect the percent of trees in agreement. Calibrated values more-closely reflect the percent of calls correctly made at any given confidence level.
+    default_optimize_hyperparameters
+        Whether to by default perform hyperparameter optimization of the random forest. Optimization occurs via a linear search of potential parameters and significantly slows down the classification process. Note: Aside from n_estimators, the first provided value for each parameter will be used for optimization of earlier hyperparameters.
+    default_hyperparameter_order
+        If optimize_hyperparameters is true, the order in which to perform the linear hyperparameter optimization. Optimization will occur by testing all variations of one hyperparameter before using the best selected one for further optimization. This list should have the same values as the keys of hyperparameters
+    default_hyperparameters
+        If optimize_hyperparameters is true, a dictionary of hyperparameter name to possible values to check for that hyperparameter. The classifier will be fit a number of times equal to the number of values in this dictionary. 
+    default_hyperparameter_min_improvement
+        Default minimum increase (0.01 = 1%) in performance of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value
+    default_hyperparameter_optimization_cap
+        Default value for the balanced accuracy score at which hyperparameter optimization will stop for that level. If none provided, 1.0 (perfect) will be used.
     load
         Either None (to initiate a new hierarchy) or a path to a hierarchy to load (exclude .hierarchy in the path). Note that loading a hierarchy overrides all other defaults.
     '''
@@ -67,6 +76,11 @@ class Hierarchy:
                        default_max_training: int=20000,
                        default_force_spike_ins: List[str]=[], 
                        default_calibrate: bool=True,
+                       default_optimize_hyperparameters: bool=False,
+                       default_hyperparameter_order: List[str]=['n_estimators', 'max_depth', 'max_features', 'min_impurity_decrease','bootstrap'],
+                       default_hyperparameters: Dict[str,list]={'n_estimators':[50, 100,200,400,800,1200],'max_depth': [None,10,25],'max_features':['log2','sqrt',0.01,0.05,0.1],'min_impurity_decrease': [0],'bootstrap':[True,False]},
+                       default_hyperparameter_min_improvement: Union[float,dict]= 0.004,
+                       default_hyperparameter_optimization_cap: float=0.98,
                        load: Optional[str]=None):
 
         if not load is None:
@@ -82,6 +96,11 @@ class Hierarchy:
             self.default_max_training = default_max_training
             self.default_force_spike_ins = default_force_spike_ins
             self.default_calibrate = default_calibrate
+            self.default_optimize_hyperparameters= default_optimize_hyperparameters
+            self.default_hyperparameter_order = default_hyperparameter_order
+            self.default_hyperparameters = default_hyperparameters
+            self.default_hyperparameter_min_improvement = default_hyperparameter_min_improvement
+            self.default_hyperparameter_optimization_cap = default_hyperparameter_optimization_cap
             self.tree = treelib.Tree()
             self.tree.create_node("All","All",data=Subset("root")) #creating a root node
             self.reset_thresholds()
@@ -997,7 +1016,8 @@ class Hierarchy:
             plt = IPython.display.Image(graph.create_png())
             IPython.display.display(plt)
         else:
-            self.tree.show()
+            print(self.tree.show(stdout=False))
+            #self.tree.show()
         if return_graph and plot:
             return graph
         return
@@ -1218,6 +1238,16 @@ class Classification:
         have enough events for training. This can be useful for cell types that are very heterogenous across batches.
     calibrate
         Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect the % of trees in agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level.
+    optimize_hyperparameters
+        Whether to optimize the classifier using the provided hyperparameters and possible values and balanced accuracy score as the optimization's cost function. Note: Optimization validation will be performed on untrained and uncalibrated data from the randomly set aside data indicated by .obsm[key_added][level + '_opt_holdout']
+    hyperparameter_order
+        The order of the parameters in hyperparameters to search through using linear optimization. Note: the values in hyperparameter_order must match the keys of hyperparameters
+    hyperparameters
+        Key value pairs where the key is the name of a hyperparameter and the value are the possible values that the hyperparameter should check in optimization. eg. bootstrap: [True, False]
+    hyperparameter_min_improvement
+        Minimum increase (0.01 = 1%) in performance of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value
+    hyperparameter_optimization_cap
+        Value for the balanced accuracy score at which hyperparameter optimization will stop for that level. If none provided, 1.0 (perfect) will be used.
     clf_kwargs
         The keyword arguments for classification. For more information about other kwargs that can be set, please see: 
         sklearn.ensemble.RandomForestClassifier. In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees in the forest.
@@ -1230,6 +1260,10 @@ class Classification:
                  feature_names: Optional[List[str]]=None,
                  is_cutoff: Optional[bool]=False, max_training: Optional[int]=None,
                  force_spike_ins=[], calibrate: Optional[bool]=None,
+                 optimize_hyperparameters: bool=None, hyperparameter_order: list=None, 
+                 hyperparameters: dict=None,
+                 hyperparameter_min_improvement: Union[dict,float]=0.004,
+                 hyperparameter_optimization_cap: float=0.98,
                  clf_kwargs: dict={}):
         self.markers = markers
         if is_cutoff == True:
@@ -1251,6 +1285,11 @@ class Classification:
             self.max_training = max_training
             self.force_spike_ins = force_spike_ins
             self.calibrate = calibrate
+            self.optimize_hyperparameters = optimize_hyperparameters
+            self.hyperparameter_order = hyperparameter_order
+            self.hyperparameters = hyperparameters
+            self.hyperparameter_min_improvement = hyperparameter_min_improvement
+            self.hyperparameter_optimization_cap = hyperparameter_optimization_cap
         return
 
 def hc_defs(marker_list: List[str], pos: Union[List[str],str]=[],

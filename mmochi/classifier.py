@@ -270,7 +270,6 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         Column in the adata.obs to be used for comparing (in the log file) the results of high-confidence thresholding to predetermined annotations or clusters
     external_holdout
         Whether to omit events that are True in adata.obsm[key_added]['external_holdout'] from training, calibration, and hyperparameter optimization, these events will have high confidence thresholds applied along and will be classified by applying the final model for each layer of the classifier. External hold out can be defined using mmc.define_external_holdout()
-        
     Returns
     -------
     adata: AnnData object
@@ -305,7 +304,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
             adata.obsm[key_added].drop([classification+"_class",classification+"_hc",classification+"_holdout",
                                         classification+"_probability",classification+"_train",classification+"_traincounts"],
                                         axis=1, inplace=True, errors='ignore')
-            if hierarchy.get_info(classification,'calibrate'): #or hierarchy.get_info(level,'optimize_hyperparameters'):
+            if hierarchy.get_info(classification,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
                 adata.obsm[key_added].drop(classification+"_opt_holdout",axis=1, inplace=True, errors='ignore')
                 
     if not end_at is None:
@@ -459,7 +458,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     clf.n_estimators = 0
                     dfs = []
                     train_dfs = []
-                    
+                    hyperparameter_X_y = []
                     for hc_barcodes_batch, batch, weight in zip(hc_barcodes_batches, hc_batches,weights):
                         clf.n_estimators += int(np.ceil(n_estimators * weight))
                         logg.info(f'Training {int(np.ceil(n_estimators * weight))} new estimators using {batch}...')
@@ -470,40 +469,110 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         train_dfs.append(pd.DataFrame.from_dict(dict(zip(df.index,traincounts)), orient="index", columns=["training"]))
                         clf.fit(X, y)
                         dfs.append(df)
-                        # if hyperparameter save X, y to a list, else delete 
-                        del X, y
-                    # if hyperparameter opt. use X, y, repeatedly to define a clf, see above, then do n_estimators += etc. 
-                    #   for all hyperparams 
-                    #     define a new clf as above, but with some changed hyperparam 
-                    #     for all X,y pairs that're saved (aka all batches) 
-                    #       fit new trees of clf on X, y 
-                    #     check clf function on opt_holdout 
-                    #     somehow save best options, and continue hyperparm loop  
+                        if hierarchy.get_info(level,'optimize_hyperparameters'):
+                            hyperparameter_X_y.append((X, y))
+                        else: 
+                            del X, y
                     
                     hierarchy.set_clf(level,clf,features_used)
-                    df = pd.concat(dfs)
-                    
-                    lost_items = hc_df[~hc_df.index.isin(df.index)].copy()
-                    lost_items[level+'_holdout'] = True
-                    lost_items[level+'_traincounts'] = 0
-                    lost_items[level+'_train'] = False
-                    df = pd.concat([df,lost_items])
-                    
-                    df.reset_index(inplace=True)
-                    
-                    df = df.groupby(['index',level+'_hc']).sum()
-                    df.reset_index(level=1,inplace=True)
-                    
-                    if hierarchy.get_info(level,'calibrate'): #or hierarchy.get_info(level,'optimize_hyperparameters'):
-                        holdout = df[(df[level + '_hc'] != '?') & (df[level + '_holdout'] == 1)].index
+                    df = pd.concat(dfs)       
+                    if hierarchy.get_info(level,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
+                        holdout = df[(df[level + '_hc'] != '?') & (df[level + '_holdout'] == True)].index
                         holdout_mask = np.random.choice([False,True], len(holdout))
                         opt_holdout_idx = holdout[~holdout_mask]
                         holdout_idx = holdout[holdout_mask]
                         unknown_idx = df[df[level + '_hc'] == '?'].index
                         df[level + '_opt_holdout'] = df[level + '_holdout']
-                        df.loc[unknown_idx,level + '_opt_holdout'] = 0
-                        df.loc[holdout_idx,level + '_opt_holdout'] = 0
-                        df.loc[opt_holdout_idx,level + '_holdout'] = 0                       
+                        df.loc[unknown_idx,level + '_opt_holdout'] = False
+                        df.loc[holdout_idx,level + '_opt_holdout'] = False
+                        df.loc[opt_holdout_idx,level + '_holdout'] = False
+                    
+                    lost_items = hc_df[~hc_df.index.isin(df.index)].copy()
+                    lost_items[level+'_holdout'] = True
+                    lost_items[level+'_traincounts'] = 0
+                    lost_items[level+'_train'] = False
+                    
+                    df = pd.concat([df,lost_items])
+                    
+                    df.reset_index(inplace=True)
+                    df[level + '_holdout'] = df[level + '_holdout'].fillna(False)
+                    if hierarchy.get_info(level,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
+                        df[level + '_opt_holdout'] = df[level + '_opt_holdout'].fillna(False)
+                    df = df.groupby(['index',level+'_hc']).sum()
+                    df.reset_index(level=1,inplace=True)   
+
+                    if hierarchy.get_info(level,'optimize_hyperparameters'): 
+                        logg.print(f'Optimizing hyperparameters for {level}...')
+                        hyperparameters = hierarchy.get_info(level,'hyperparameters') #dict of hyperparameter:values
+                        hyperparameter_order = hierarchy.get_info(level,'hyperparameter_order')
+                        min_improvement = hierarchy.get_info(level,'hyperparameter_min_improvement')
+                        optimization_cap = hierarchy.get_info(level,'hyperparameter_optimization_cap')
+                        if optimization_cap == None:
+                            optimization_cap = 1.0
+                        if isinstance(min_improvement,dict):
+                            min_n_estimator_increase = 0.0
+                            min_max_features_increase = 0.0
+                            if 'n_estimators' in min_improvement.keys():
+                                min_n_estimator_increase = min_improvement['n_estimators']
+                            if 'max_features' in min_improvement.keys():
+                                min_max_features_increase = min_improvement['max_features']
+                        elif isinstance(min_improvement, float):
+                            min_n_estimator_increase = min_improvement
+                            min_max_features_increase = min_improvement
+                        else:
+                            logg.warn(f'no provided min improvement for level {level}')
+                            min_n_estimator_increase = 0.0
+                            min_max_features_increase = 0.0
+                        for param in hyperparameters:
+                            if param not in clf_kwargs.keys():
+                                clf_kwargs[param] = clf.__dict__[param]
+                        clf_kwargs['verbose'] = False
+                        opt_holdout_mask = (df[level + '_opt_holdout'] == True)
+                        subset_X_barcodes = df[(df[level + '_opt_holdout'] == True)].index.astype(int) #df gets ordered by batches above
+                        sample_weights = sklearn.utils.class_weight.compute_sample_weight(class_weight,df[opt_holdout_mask][level + '_hc'], indices=None)
+                        labels = clf.predict(total_X[subset_X_barcodes])
+                        score = sklearn.metrics.balanced_accuracy_score(df[opt_holdout_mask][level + '_hc'], labels, sample_weight=sample_weights)
+                        best_clf = [score, clf, clf_kwargs.copy()]
+                        assert set(hyperparameter_order) == set(hyperparameters.keys()), "hyperparameter_order must contain all keys in hyperparameters and only those keys"
+                        for param in hyperparameter_order: #max_depth, max_features, min_impuritity_decrease, bootstrap
+                            if best_clf[0] >= optimization_cap:
+                                logg.debug(f'optimization cap reached for level {level}, skipping param {param} and beyond')
+                                break
+                            best_clf = (0.0, best_clf[1],best_clf[2])
+                            logg.print(f'Checking hyperparameters {param} for values of {hyperparameters[param]}')
+                            hyper_clf_kwargs = best_clf[2].copy()
+                            for val in hyperparameters[param]: 
+                                logg.debug(f'Checking hyperparameters {param} for values of {val}')
+                                hyper_clf_kwargs[param] = val 
+                                clf = sklearn.ensemble.RandomForestClassifier(class_weight=class_weight,
+                                                                      warm_start=(not batch_key is None),**hyper_clf_kwargs)
+                                n_estimators = clf.n_estimators
+                                clf.n_estimators = 0
+                                for pair, weight in zip(hyperparameter_X_y,weights):
+                                    clf.n_estimators += int(np.ceil(n_estimators * weight))
+                                    
+                                    clf.fit(pair[0], pair[1])
+                                
+                                labels = clf.predict(total_X[subset_X_barcodes])
+                                score = sklearn.metrics.balanced_accuracy_score(df[opt_holdout_mask][level + '_hc'], labels, sample_weight=sample_weights)
+                                logg.print(f'Score for {param}: {val} = {score}')
+                                if param == 'n_estimators' and val != hyperparameters[param][0] and score - best_clf[0] < min_n_estimator_increase: #if no real improvement for increasing n_estimators, stop
+                                    logg.debug(f'Best parameter for n_estimators was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
+                                    break
+                                elif param == 'max_features' and val != hyperparameters[param][0] and score - best_clf[0] < min_max_features_increase:
+                                    logg.debug(f'Best parameter for max_features was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
+                                    break
+                                if score > best_clf[0]:
+                                    best_clf = (score, clf, hyper_clf_kwargs.copy())
+                            logg.print(f'Best parameter for {param} was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
+                        clf = best_clf[1]
+                        clf_kwargs = best_clf[2].copy()
+                        clf_kwargs['verbose'] = True
+                        logg.print(f'Best hyperparameters selected for level {level} as {clf_kwargs} with an balanced accuracy of {best_clf[0]}')
+                        del hyperparameter_X_y #note you may have to delete them individually
+                        gc.collect()
+                        hierarchy.tree[level].data.clf_kwargs = clf_kwargs.copy()             
+                                      
                     
                     train_dfs.append(pd.DataFrame(0,index=lost_items.index,columns=[level+'_training']))
                     train_df = pd.concat(train_dfs)
@@ -511,16 +580,16 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     train_df = train_df.groupby(['index']).sum()
                     df[level+'_traincounts'] = train_df['training'].astype(int)
                     df[level+'_train'] = train_df['training'].astype(bool)
-                    del train_df                
+                    # if level + ''
                     df[level+'_holdout'] = (df[level+'_holdout']) #& (df[level+'_hc'] != '?')
                     if hierarchy.get_info(level,'calibrate'):
                         df[level+'_opt_holdout'] = (df[level+'_opt_holdout'])
-                # TODO add hyperparameter optimization loop for above this
+
                 logg.print(f"Merging data into adata.obsm['{key_added}']")
                 total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
                                           right_index=True,suffixes=['_error',None])
                 
-                # total_adata.obsm[key_added][]
+                
                 #spike ins might be holdout in one batch and trained with in another
                 if not hierarchy.get_info(level,'is_cutoff') and not batch_key is None and len(spike_in_barcodes) > 0:
                     total_adata.obsm[key_added].loc[list(set(spike_in_barcodes)),level+'_holdout'] = 0.0
@@ -571,7 +640,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         
                         total_adata.obsm[key_added][level+'_hc'] = total_adata.obsm[key_added][level+'_hc'].combine_first(df[level+'_hc']) 
                         total_adata.obsm[key_added][level+'_holdout'] = total_adata.obsm[key_added][level+'_holdout'].combine_first(df[level+'_holdout']) 
-                        if hierarchy.get_info(level,'calibrate'): #or hierarchy.get_info(level,'optimize_hyperparameters'):
+                        if hierarchy.get_info(level,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
                             total_adata.obsm[key_added][level+'_opt_holdout'] = total_adata.obsm[key_added][level+'_opt_holdout'].combine_first(df[level+'_opt_holdout']) 
                         total_adata.obsm[key_added][level+'_traincounts'] = total_adata.obsm[key_added][level+'_traincounts'].combine_first(df[level+'_traincounts']) 
                         total_adata.obsm[key_added][level+'_train'] = total_adata.obsm[key_added][level+'_train'].combine_first(df[level+'_train']) 
