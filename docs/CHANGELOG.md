@@ -16,7 +16,7 @@ pip install .
 ---
 ## Current version
 
-### [0.3.0dev] - 07NOV23
+### [0.3.0dev] - 11JAN24
 
 #### Added
 
@@ -30,7 +30,9 @@ pip install .
 
 - Added a page to documentation for sharing default `marker_bandwdith` values for various antibodies
 
-- Hyperparameter optimization, which can be activated using new parameters in `mmc.Hierarchy` (Todo: write tutorial)
+- Hyperparameter optimization, which can be activated using new parameters in `mmc.Hierarchy`
+
+- Added tutorial for [Hyperparameter Optimization](Hyperparameter_Optimization.ipynb) and updated links to it
 
 #### Fixed 
 

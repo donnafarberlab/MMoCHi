@@ -31,6 +31,10 @@ Once a classifier has been trained, MMoCHi offers insight into the decisions mad
 
 MMoCHi can also be used for label transfer using a pretrained classification. The pretrained classification tutorial demonstrates how to take a classifier and apply it directly to a new dataset to achieve this goal.
 
+:ref:`**Automatic Hyperparameter Optimization with MMoCHi**`
+
+Random forests in MMoCHi can sometimes require hyperparameter tuning. This can be done manually, or using MMoCHi's built-in functionality.
+
 .. tocTree::
    :maxdepth: 0
    :titlesonly:
@@ -42,3 +46,4 @@ MMoCHi can also be used for label transfer using a pretrained classification. Th
    High_Confidence_Thresholding
    Exploring_Feature_Importances
    Pretrained_Classification
+   Hyperparameter_Optimization

@@ -1,4 +1,4 @@
-MMoCHi - MultiModal Classification Hierarchy
+MMoCHi - MultiModal Classifier Hierarchy
 ********************************************
 
 
