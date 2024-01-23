@@ -113,6 +113,8 @@ def test_update_peak_overrides(kwargs):
                               ids=['defaults','show','show3','set_marker_bandwidth',
                                    'single_peaks','peak_override','single_positive','single_negative','single_pos_string','peak_overrides_file'])
 def test_landmark(data_load,kwargs):
+    mmc.define_external_holdout(data_load)
+    adata = mmc.landmark_register_adts(data_load,'batch',data_key='protein',inclusion_mask = ~data_load.obsm['lin']['external_holdout'],**kwargs)
     adata = mmc.landmark_register_adts(data_load,'batch',data_key='protein',**kwargs)
     assert 'landmark_protein' in adata.obsm.keys()
     for i in adata.obsm['protein'].columns:
@@ -290,6 +292,8 @@ def test_classify_cutoff(landmarked, test_hierarchy_load_thresholds):
     adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
                                    'landmark_protein', batch_key='batch',
                                    retrain = True)
+    hierarchy.publication_export(adata, data_key='landmark_protein')
+    hierarchy.publication_export(data_key='landmark_protein')
     adata = mmc.terminal_names(adata)
     adata = mmc.terminal_names(adata,voting_reference='batch')
     mmc.classifier.DEBUG_ERRORS = False

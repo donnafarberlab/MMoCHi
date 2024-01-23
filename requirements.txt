@@ -11,7 +11,7 @@ ipywidgets>=7.7.0
 pydot>=1.4.2
 tqdm>=4.64.0
 scikit-fda>=0.5
-seaborn>=0.11.2
+seaborn>=0.12.2
 ipython>=8.4.0
 ipykernel>=6.18.0
 anndata<0.10.2

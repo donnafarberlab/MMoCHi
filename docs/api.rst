@@ -54,6 +54,7 @@ Once the Hierarchy is created and high-confidence thresholds are drawn, you are 
    hc_threshold
    classify
    terminal_names
+   define_external_holdout
    ...
 
 Plotting 

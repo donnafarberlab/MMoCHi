@@ -16,54 +16,53 @@ pip install .
 ---
 ## Current version
 
-### [0.3.0dev] - 11JAN24
+### [0.3.0] - 23JAN24
 
 #### Added
 
-- Users can now optionally define an "external hold out". This hold out is defined before high-confidence thresholding, and is thus can be isolated from all steps of MMoCHi's training and preprocessing. While "internal hold out" (previously the only available hold out) is used to evaluate the fit of MMoCHi's random forests at each level, external hold out can be used to evaluate MMoCHi's overall classification performance.
+- Users can now optionally define an "external hold out". This hold out is defined before high-confidence thresholding, and is thus can be isolated from all steps of MMoCHi's training and preprocessing. While "internal hold out" (previously the only available hold out) is used to evaluate the fit of MMoCHi's random forests at each level, external hold out can be used to evaluate MMoCHi's overall classification performance. The new function `mmc.define_external_hold_out()` allows users to define a random subset of the data to be used as an external hold out. This adds a new column to the `.obsm['lin']` called `external_hold_out`, which can be used in various functions. 
 
-- The new function `mmc.define_external_hold_out()` allows users to define a random subset of the data to be used as an external hold out. This adds a new column to the `.obsm['lin']` called `external_hold_out`.
+- Added an automated linear search hyperparameter optimization, which can be activated using new parameters in `mmc.Hierarchy`, and can be customized with `hyperparameter_min_improvement`, `hyperparameter_optimization_cap`. See this new tutorial for more information: [Hyperparameter Optimization](Hyperparameter_Optimization.ipynb)
 
-- Added `h.publication_export()` a helper function (currently in beta) for exporting supplementary tables describing the design of a MMoCHi hierarchy and thresholds used. 
+- Added `mmc.Hierarchy.get_optimal_clf_kwargs` and `mmc.Hierarchy.get_clf_kwargs` to get a dataframe displaying either the optimized or the original keyword arguments (hyperparameters) passed to Random Forest.
+
+- Added `mmc.Hierachy.get_clf_kwarfs` and `mmc.Hierachy.get_optimal_clf_kwargs` functions to display default random forest classifier kwargs and ones selected by hyperparameter optimization (after `mmc.classify` has been run) respectively
+
+- Added a [page to documentation](Landmark_Registration_Advice.md) for sharing default `marker_bandwdith` values for various antibodies and included more examples to the [Example Hierarchies]Example_Hierarchies.md) page.
+
+- Optional `inclusion_mask` can be passed to landmark registration so peaks can be detected on only a subset of events, but the warping can still be applied to all events
+
+- Added `h.publication_export()` a helper function (currently in beta) for exporting supplementary tables describing the design of a MMoCHi hierarchy and thresholds used
 
 - Added a copy button to all code blocks in the documentation
 
-- Added a page to documentation for sharing default `marker_bandwdith` values for various antibodies
-
-- Hyperparameter optimization, which can be activated using new parameters in `mmc.Hierarchy`
-
-- Added tutorial for [Hyperparameter Optimization](Hyperparameter_Optimization.ipynb) and updated links to it
-
 #### Fixed 
 
-- Fixed how calibration uses held-out data, such that hold out data used for calibration is now separate from the data used for performance validation. In the case where calibration (or hyperparameter optimization, once released), is enabled, the internal hold out data is split in half. The half used for optimization/calibration is now indicated by a new column in the `.obsm['lin']`, called `[level]_opt_hold_out`. 
+- Fixed how calibration uses held-out data, such that hold out data used for calibration is now separate from the data used for performance validation. In the case where calibration (or hyperparameter optimization), is enabled, the internal hold out data is split in half. The half used for optimization/calibration is now indicated by a new column in the `.obsm['lin']`, called `[level]_opt_hold_out`. 
 
-- Added requirement for matplotlib above version 3.6.1, as lower versions break scanpy's handling of cmaps (Todo: check again)
+- Added requirement for matplotlib above version 3.6.1, as lower versions break scanpy's handling of cmaps
 
-- Added requirement capping AnnData below version 0.10.2, as that version breaks anndata.concat (due to bugfix #1189) (Todo: check again)
+- Added requirement capping AnnData below version 0.10.2, as that version breaks anndata.concat (due to bugfix #1189)
 
-- Added requirement for scanpy to be at or above version 1.8.0, as there were strange issues with scanpy import a lower versions. (Todo: check again)
+- Added requirement for scanpy to be at or above version 1.8.0, as there were strange issues with scanpy import a lower versions.
 
 - Fixed formatting issues with hierarchy `.display()` method
+
+- Bug making `h.publication_export()` unable to identify batch specific thresholds
+
+- Bug where `clf_kwargs` parameter was overwritten in the `mmc.Classifier` objects with optimal kwargs that were selected by hyperparameter optimization
 
 #### Changed
 
 - 'hold_out' was replaced with 'holdout' for consistency (this was previously only partially executed in the codebase)
 
-### [0.2.3dev] - 21AUG23
+- Silenced deprecation warnings from the `numba` package, as it is only used indirectly (e.g. in the `umap` package)
 
-- Updated displays in tutorial notebooks to reflect bug fixes from 0.2.3
+- Silenced many warnings when running pytest
 
-- Improved `mmc.utils.umap_thresh()` by removing features that are columns in the `.obs` from being selected when `markers` is set to `None` and to add a `plt.show()` to the loop so that plots are shown progressively.
+- Import `threshold` and `run_threshold` from the `mmc.thresholding` module in __init__.py for consistency (so they are now accessible by `mmc.threshold` or `mmc.run_threshold`)
 
-- Updated `Python3_8_requirements.txt` to remove unnecessary packages and convert to conda format
-
-#### Added
-
-- Added `bins` parameter to threshold plotting so that users can control the number of histogram bins
-
-
-### [0.2.3] - 14JUL23
+### [0.2.3] - 21AUG23
 
 #### Fixed 
 
@@ -82,6 +81,16 @@ pip install .
 - Removed temporary requirement limiting scikit-learn to below 1.3.0, as imbalanced-learn has updated to support scikit-learn==1.3.0
 
 - Adjusted dependencies specified for tox testing
+
+- Updated displays in tutorial notebooks to reflect bug fixes
+
+- Improved `mmc.utils.umap_thresh()` by removing features that are columns in the `.obs` from being selected when `markers` is set to `None` and to add a `plt.show()` to the loop so that plots are shown progressively.
+
+- Updated `Python3_8_requirements.txt` to remove unnecessary packages and convert to conda format
+
+#### Added
+
+- Added `bins` parameter to threshold plotting so that users can control the number of histogram bins
 
 
 ### [0.2.2] - 30JUN23

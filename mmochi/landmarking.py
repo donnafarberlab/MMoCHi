@@ -43,7 +43,8 @@ with _HiddenPrints(): # Attempt to hide an import warning of cython failing, whi
 def landmark_register_adts(adata: anndata.AnnData, batch_key: str=utils.BATCH_KEY,
                            data_key: str='protein', key_added: str='landmark_protein',
                            show: Union[bool, int]=False, single_peaks:List[str]=[],
-                           marker_bandwidths: dict={}, peak_overrides: Union[dict,str]={},**kwargs) -> anndata.AnnData:
+                           marker_bandwidths: dict={}, peak_overrides: Union[dict,str]={},
+                           inclusion_mask: Optional[Union[List, str]]=None, **kwargs) -> anndata.AnnData:
     ''' Batch correction for expression of all ADTs. 
     
     Performs negative and positive peak alignment on histograms of ADT expression. Currently expects log or arcsine normalized ADTs (e.g. log2(CP1k)). 
@@ -70,6 +71,8 @@ def landmark_register_adts(adata: anndata.AnnData, batch_key: str=utils.BATCH_KE
         In the format { 'batch_1':{'marker_1':[0.1,0.5]} }, to override peak detection for individual markers in individual batches. 
         To force a positive peak, pass [None,float] as the override. To force a negative peak, you can pass simply [float]. 
         Can also be passed as a str, corresponding to the file path of a JSON saved with this same format.
+    inclusion_mask
+        Mask events included in landmark registration warping calculation or a column in the .obs with such a mask
     **kwargs 
         Other key word arguments are passed to _detect_landmarks
         
@@ -80,6 +83,11 @@ def landmark_register_adts(adata: anndata.AnnData, batch_key: str=utils.BATCH_KE
     '''
     if type(peak_overrides) is str:
         peak_overrides = load_peak_overrides(peak_overrides)
+        
+    if inclusion_mask is None:
+        inclusion_mask = np.array([True] * len(adata))
+    if isinstance(inclusion_mask, str):
+        inclusion_mask = adata.obs[inclusion_mask]
     
     default_bandwidth = 0.2
     assert len(adata.obs_names) == len(set(adata.obs_names)), 'Obs names must be made unique'
@@ -106,9 +114,9 @@ def landmark_register_adts(adata: anndata.AnnData, batch_key: str=utils.BATCH_KE
         if show:
             res = []
             for i, (input_array,single_peak,bandwidth,override) in enumerate(zip(input_arrays,single_peak_list,bandwidths,overrides)):
-                res.append(_landmark_registration((input_array,single_peak,bandwidth,override), base_barcodes=barcodes,show=show,info=(str(batch)+" "+markers[i]), **kwargs))
+                res.append(_landmark_registration((input_array,single_peak,bandwidth,override), base_barcodes=barcodes,show=show,info=(str(batch)+" "+markers[i]),inclusion_mask=inclusion_mask[batch_mask], **kwargs))
         else:
-            fun = partial(_landmark_registration, base_barcodes=barcodes,show=show, **kwargs)
+            fun = partial(_landmark_registration, base_barcodes=barcodes,show=show,inclusion_mask=inclusion_mask[batch_mask],  **kwargs)
             with get_context("spawn").Pool() as pool:
                 res = pool.map(fun, zip(input_arrays,single_peak_list,bandwidths,overrides))
         for marker,r in zip(markers,res):
@@ -172,7 +180,8 @@ def update_landmark_register(adata: anndata.AnnData, batch: str,
                              data_key: str='protein', key_added: str='landmark_protein', 
                              show: Union[bool, int]=False,
                              single_peaks: Union[bool,List[str]]=[],
-                             bandwidth: Union[float,dict]=0.2, **kwargs)-> anndata.AnnData:
+                             bandwidth: Union[float,dict]=0.2, inclusion_mask: Optional[Union[List, str]]=None,
+                             **kwargs)-> anndata.AnnData:
     '''  
     Landmark registration batch correction for ADT expression for a single marker on a single batch. landmark_register_adts() must be run before this. See landmark_register_adts for more details.
     
@@ -201,6 +210,8 @@ def update_landmark_register(adata: anndata.AnnData, batch: str,
         Columns in adata.obsm[data_key] corresponding to ADTs to only align a single peak of. Can also just be True or False.
     marker_bandwidths
         In the format {marker:0.5}, to override bandwidths used for individual markers, or just a bandwidth number to use that.
+    inclusion_mask
+        Mask of events included in landmark registration warping calculation or a column in the .obs with such a mask
     **kwargs 
         Other key word arguments are passed to _detect_landmarks
         
@@ -217,6 +228,10 @@ def update_landmark_register(adata: anndata.AnnData, batch: str,
     barcodes = adata.obs_names[adata.obs[batch_key] == batch]
     assert len(barcodes) > 1, f'Batch of {batch} in adata.obs["{batch_key}"] not found.'
     
+    if inclusion_mask is None:
+        inclusion_mask = np.array([True] * len(adata))
+    if isinstance(inclusion_mask, str):
+        inclusion_mask = adata.obs[inclusion_mask]
     if type(override) is str:
         override = load_peak_overrides(override)   
     if type(override) is dict:
@@ -229,8 +244,9 @@ def update_landmark_register(adata: anndata.AnnData, batch: str,
     if type(bandwidth) is dict:
         bandwidth = bandwidth[marker]
 
+    inclusion_mask = inclusion_mask[adata.obsm[data_key].index.isin(barcodes)]
     input_array = np.array(adata.obsm[data_key].loc[barcodes,marker])
-    res = _landmark_registration((input_array,single_peaks,bandwidth,override), base_barcodes=barcodes,show=show,info=(str(batch)+" "+marker), **kwargs)
+    res = _landmark_registration((input_array,single_peaks,bandwidth,override), base_barcodes=barcodes,show=show,info=(str(batch)+" "+marker),inclusion_mask=inclusion_mask, **kwargs)
     adata.obsm[key_added].loc[barcodes,marker] = res[2]
     adata.uns[data_key+"_peaks"][batch][marker] = res[1]
     adata.uns[key_added+"_peaks"][batch][marker] = res[0]
@@ -240,7 +256,7 @@ def update_landmark_register(adata: anndata.AnnData, batch: str,
 
 
 def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarray, bool, Union[float, int], List[Union[float,int]]],
-                           base_barcodes: List[str], show: Union[bool,int]=False,
+                           base_barcodes: List[str], show: Union[bool,int]=False, inclusion_mask: Optional[List[bool]]=None,
                            **kwargs) -> Tuple[np.array, np.array, np.array]:
     '''
     Aligns data positive and negative peaks to specified locations
@@ -264,6 +280,8 @@ def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarra
         DNA barcodes, index aligned to input_array
     show
         Whether to show plotted intermediates to better reveal peak detection. Integers (up to 3) correspond to increased verbosity level.
+    inclusion_mask
+        Mask of values to use for calculation of peaks (masked adata passed to _detect_landmarks)
     **kwargs
         Other keyword arguments are passed to _detect_landmarks
         
@@ -291,7 +309,14 @@ def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarra
     fd = FDataGrid(y, grid_points=x)
     
     if override == []:
-        peaks = _detect_landmarks(y,single_peak=single_peak,show=show,**kwargs)
+        if not inclusion_mask is None:
+            inclusion_mask = inclusion_mask[array>0]
+            kde_masked = stats.gaussian_kde(ray[inclusion_mask],bw_method='scott')
+            kde_masked.set_bandwidth(bandwidth)
+            y_masked = kde_masked.pdf(x)
+        else:
+            y_masked = y
+        peaks = _detect_landmarks(y_masked,single_peak=single_peak,show=show,**kwargs)
     else:
         if not type(override) == list:
             peaks = list(override)
@@ -317,7 +342,7 @@ def _landmark_registration(array_single_peak_bandwidth_override: Tuple[np.ndarra
         location,peaks = [1],[max(y)]
     try:
         warp = landmark_registration_warping(fd,[sorted(peaks)],location=location)
-    except:
+    except NameError:
         warp = landmark_elastic_registration_warping(fd,[sorted(peaks)],location=location)
     warp = invert_warping(warp)
     ray = warp(ray).reshape(-1)
@@ -547,7 +572,7 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
     if not save_fig is None:
         g.savefig(save_fig)
     plt.show()
-    return
+    return 
 
 def density_plot(adata: anndata.AnnData, marker: str,
                  batch: str, batch_key: str=utils.BATCH_KEY,

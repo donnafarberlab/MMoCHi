@@ -19,6 +19,13 @@ from . import utils
 from .logger import logg
 from . import thresholding
 
+# Silence numba deprecation warnings
+from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
+import warnings
+warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
+warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
+
+
 
 DEBUG_ERRORS = False
 
@@ -329,7 +336,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     else:
         weights =  [1/len(batches)] * len(batches)
     logg.info(f'Using weights of: {weights} for random forest n_estimators')
-    for level in classifications:
+    for level in classifications:   
         try:
             parent,gparent = hierarchy.classification_parents(level)
             assert gparent+"_class" in total_adata.obsm[key_added].columns, f"Cannot subset on {parent} to train {level} as {gparent} has not been classified"
@@ -486,6 +493,11 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         df.loc[unknown_idx,level + '_opt_holdout'] = False
                         df.loc[holdout_idx,level + '_opt_holdout'] = False
                         df.loc[opt_holdout_idx,level + '_holdout'] = False
+                        if df.loc[opt_holdout_idx,level + '_hc'].value_counts().min() < max((min_events * 0.5), 5):
+                            logg.warn(f'Optimize holdout contains too few events in some classes, which may make hyperparameter optimization or calibration unstable.')
+                            logg.warn(df.loc[opt_holdout_idx,level + '_hc'].value_counts())
+                            
+                        
                     
                     lost_items = hc_df[~hc_df.index.isin(df.index)].copy()
                     lost_items[level+'_holdout'] = True
@@ -500,50 +512,57 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         df[level + '_opt_holdout'] = df[level + '_opt_holdout'].fillna(False)
                     df = df.groupby(['index',level+'_hc']).sum()
                     df.reset_index(level=1,inplace=True)   
-
+                    
                     if hierarchy.get_info(level,'optimize_hyperparameters'): 
                         logg.print(f'Optimizing hyperparameters for {level}...')
                         hyperparameters = hierarchy.get_info(level,'hyperparameters') #dict of hyperparameter:values
                         hyperparameter_order = hierarchy.get_info(level,'hyperparameter_order')
-                        min_improvement = hierarchy.get_info(level,'hyperparameter_min_improvement')
-                        optimization_cap = hierarchy.get_info(level,'hyperparameter_optimization_cap')
-                        if optimization_cap == None:
-                            optimization_cap = 1.0
-                        if isinstance(min_improvement,dict):
-                            min_n_estimator_increase = 0.0
-                            min_max_features_increase = 0.0
-                            if 'n_estimators' in min_improvement.keys():
-                                min_n_estimator_increase = min_improvement['n_estimators']
-                            if 'max_features' in min_improvement.keys():
-                                min_max_features_increase = min_improvement['max_features']
-                        elif isinstance(min_improvement, float):
-                            min_n_estimator_increase = min_improvement
-                            min_max_features_increase = min_improvement
-                        else:
-                            logg.warn(f'no provided min improvement for level {level}')
-                            min_n_estimator_increase = 0.0
-                            min_max_features_increase = 0.0
-                        for param in hyperparameters:
-                            if param not in clf_kwargs.keys():
-                                clf_kwargs[param] = clf.__dict__[param]
+                        assert set(hyperparameter_order) == set(hyperparameters.keys()), "hyperparameter_order must contain all keys in hyperparameters and only those keys"
+                        
                         clf_kwargs['verbose'] = False
                         opt_holdout_mask = (df[level + '_opt_holdout'] == True)
                         subset_X_barcodes = df[(df[level + '_opt_holdout'] == True)].index.astype(int) #df gets ordered by batches above
                         sample_weights = sklearn.utils.class_weight.compute_sample_weight(class_weight,df[opt_holdout_mask][level + '_hc'], indices=None)
                         labels = clf.predict(total_X[subset_X_barcodes])
                         score = sklearn.metrics.balanced_accuracy_score(df[opt_holdout_mask][level + '_hc'], labels, sample_weight=sample_weights)
-                        best_clf = [score, clf, clf_kwargs.copy()]
-                        assert set(hyperparameter_order) == set(hyperparameters.keys()), "hyperparameter_order must contain all keys in hyperparameters and only those keys"
-                        for param in hyperparameter_order: #max_depth, max_features, min_impuritity_decrease, bootstrap
-                            if best_clf[0] >= optimization_cap:
-                                logg.debug(f'optimization cap reached for level {level}, skipping param {param} and beyond')
+                        best_clf = (score, clf, clf_kwargs.copy())
+                      
+                    
+                    
+                        min_improvement = hierarchy.get_info(level,'hyperparameter_min_improvement')
+                        optimization_cap = hierarchy.get_info(level,'hyperparameter_optimization_cap')
+                        if optimization_cap is None or isinstance(optimization_cap, float) or isinstance(optimization_cap, int):
+                            optimization_cap = {i:optimization_cap for i in hyperparameters}
+                        if min_improvement is None or isinstance(min_improvement, float) or isinstance(min_improvement, int):
+                            min_improvement = {i:min_improvement for i in hyperparameters}
+                            
+                        for param in hyperparameter_order:
+                            if param not in clf_kwargs.keys():
+                                clf_kwargs[param] = clf.__dict__[param]
+                                
+                            if param not in min_improvement:
+                                min_improvement[param] = None
+                            opt_cap = optimization_cap[param]
+                            if opt_cap is None:
+                                opt_cap = 1.0
+                                
+                            if param not in min_improvement:
+                                min_improvement[param] = None  
+                            min_improve = min_improvement[param]
+                            if min_improve is None:
+                                min_improve = -1.0
+                            logg.print(f'Using optimization cap of {opt_cap} and min_improvement of {min_improve} for {param}')
+                        
+                            if best_clf[0] >= opt_cap:
+                                logg.print(f'Optimization cap reached for level {level}, skipping param {param} and beyond')
                                 break
+                                
                             best_clf = (0.0, best_clf[1],best_clf[2])
-                            logg.print(f'Checking hyperparameters {param} for values of {hyperparameters[param]}')
+                            
                             hyper_clf_kwargs = best_clf[2].copy()
                             for val in hyperparameters[param]: 
                                 logg.debug(f'Checking hyperparameters {param} for values of {val}')
-                                hyper_clf_kwargs[param] = val 
+                                hyper_clf_kwargs[param] = val
                                 clf = sklearn.ensemble.RandomForestClassifier(class_weight=class_weight,
                                                                       warm_start=(not batch_key is None),**hyper_clf_kwargs)
                                 n_estimators = clf.n_estimators
@@ -556,11 +575,9 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                                 labels = clf.predict(total_X[subset_X_barcodes])
                                 score = sklearn.metrics.balanced_accuracy_score(df[opt_holdout_mask][level + '_hc'], labels, sample_weight=sample_weights)
                                 logg.print(f'Score for {param}: {val} = {score}')
-                                if param == 'n_estimators' and val != hyperparameters[param][0] and score - best_clf[0] < min_n_estimator_increase: #if no real improvement for increasing n_estimators, stop
-                                    logg.debug(f'Best parameter for n_estimators was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
-                                    break
-                                elif param == 'max_features' and val != hyperparameters[param][0] and score - best_clf[0] < min_max_features_increase:
-                                    logg.debug(f'Best parameter for max_features was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
+                                
+                                if score - best_clf[0] < min_improve: #if no real improvement for increasing n_estimators, stop
+                                    logg.debug(f'Best parameter for {param} was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
                                     break
                                 if score > best_clf[0]:
                                     best_clf = (score, clf, hyper_clf_kwargs.copy())
@@ -570,8 +587,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         clf_kwargs['verbose'] = True
                         logg.print(f'Best hyperparameters selected for level {level} as {clf_kwargs} with an balanced accuracy of {best_clf[0]}')
                         del hyperparameter_X_y #note you may have to delete them individually
-                        gc.collect()
-                        hierarchy.tree[level].data.clf_kwargs = clf_kwargs.copy()             
+                        gc.collect()             
                                       
                     
                     train_dfs.append(pd.DataFrame(0,index=lost_items.index,columns=[level+'_training']))
@@ -1408,7 +1424,11 @@ def define_external_holdout(adata: anndata.AnnData, key_added: str='lin',
                              holdout_mask: Optional[List[bool]] = None, holdout_fraction: Union[float, int]=0.2,
                             overwrite: bool=False):
     '''
-    Lightweight wrapper to find the marker (utils.get_data()), then performs pos/neg/? thresholding on all events in the AnnData, given a list of positive and negative thresholds.
+    Creates column in .obsm[key_added] with randomly selected holdout for benchmarking its performance against other tools.
+    To ensure this data is held out from thresholding and classification, pass external_holdout=True to both functions. 
+    To perform peak detection with this data excluded, invert this mask and pass it to inclusion_mask in landmark_register_adts or update_landmark_register
+    
+    Note: By default if external holdout already exists, this function will not overwrite the current holdout column
     
     Parameters
     ----------
@@ -1417,7 +1437,7 @@ def define_external_holdout(adata: anndata.AnnData, key_added: str='lin',
     key_added
         Will add external_holdout column to .obsm[key_added] if it exists and will also create .obsm[key_added] dataframe if it does not  
     holdout_fraction
-        Either a proportion or numer of events to set aside for external hold out
+        Either a proportion (if less than or equal to 1) or number (if greater than 1) of events to set aside for external hold out
     overwrite
         Whether to replace old external hold out column if one exists
 
@@ -1426,7 +1446,7 @@ def define_external_holdout(adata: anndata.AnnData, key_added: str='lin',
         assert len(holdout_mask) == len(adata), 'Mask must have same length as adata'
         holdout = holdout_mask
     else:
-        if holdout_fraction < 1:
+        if holdout_fraction <= 1:
             holdout_n = int(len(adata) * holdout_fraction)
         else:
             holdout_n = int(holdout_fraction)

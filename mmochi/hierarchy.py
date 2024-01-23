@@ -60,7 +60,7 @@ class Hierarchy:
     default_hyperparameters
         If optimize_hyperparameters is true, a dictionary of hyperparameter name to possible values to check for that hyperparameter. The classifier will be fit a number of times equal to the number of values in this dictionary. 
     default_hyperparameter_min_improvement
-        Default minimum increase (0.01 = 1%) in performance of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value
+        Default minimum increase in performance (as measured by balanced_accuracy) of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value. You can use -1 to prevent any early-stopping based on minimum improvement. 
     default_hyperparameter_optimization_cap
         Default value for the balanced accuracy score at which hyperparameter optimization will stop for that level. If none provided, 1.0 (perfect) will be used.
     load
@@ -69,7 +69,7 @@ class Hierarchy:
     def __init__(self, default_min_events: Union[int,float]=0.001,
                        default_class_weight: Union[str, dict, List[dict]]='balanced_subsample', 
                        default_clf_kwargs: dict=dict(max_depth=20, n_estimators=100,
-                                                      n_jobs=-1,bootstrap=True,verbose=True),
+                                                      n_jobs=-1,bootstrap=True,verbose=True, max_features='sqrt'),
                        default_in_danger_noise_checker: Union[str,bool]=True, 
                        default_is_cutoff: Union[bool,str]=False, 
                        default_features_limit: Optional[Union[List[str],Dict[str,List[str]]]]=None,
@@ -77,10 +77,10 @@ class Hierarchy:
                        default_force_spike_ins: List[str]=[], 
                        default_calibrate: bool=True,
                        default_optimize_hyperparameters: bool=False,
-                       default_hyperparameter_order: List[str]=['n_estimators', 'max_depth', 'max_features', 'min_impurity_decrease','bootstrap'],
-                       default_hyperparameters: Dict[str,list]={'n_estimators':[50, 100,200,400,800,1200],'max_depth': [None,10,25],'max_features':['log2','sqrt',0.01,0.05,0.1],'min_impurity_decrease': [0],'bootstrap':[True,False]},
-                       default_hyperparameter_min_improvement: Union[float,dict]= 0.004,
-                       default_hyperparameter_optimization_cap: float=0.98,
+                       default_hyperparameter_order: List[str]=['n_estimators', 'max_depth', 'max_features', 'bootstrap'],
+                       default_hyperparameters: Dict[str,list]={'n_estimators':[50, 100,200,400,800,1200],'max_depth': [None,10,25],'max_features':['log2','sqrt',0.05,0.1],'bootstrap':[True,False]},
+                       default_hyperparameter_min_improvement: Optional[Union[float,dict]]= {'n_estimators':0.004,'max_features':0.004},
+                       default_hyperparameter_optimization_cap: Optional[float]=0.98,
                        load: Optional[str]=None):
 
         if not load is None:
@@ -847,14 +847,14 @@ class Hierarchy:
                 t=None
 
             if not level is None:
-                print(f'On level {level}')
+                logg.print(f'On level {level}')
             try: 
                 threshold = thresholding.threshold(marker,adata[external_holdout_mask][mask],data_key,preset_threshold=t,
                                          include_zeroes=False, n=0, force_model=False,
                                          plot=plot, interactive=interactive, fancy='fancy' in mode, run=False,
                                          title_addition= '' if batch_key is None else batch,bins=bins)
                 if not 'fancy' in mode:
-                    print(threshold)
+                    logg.print(threshold)
                     self.set_threshold(marker,threshold, False, level, batch)
                 else:
                     fancy_resolution.append((marker, threshold, level, batch))
@@ -862,7 +862,7 @@ class Hierarchy:
                 # logg.warning(f'Ran into error, skipping marker...', exc_info=1)
                 logg.warning(f"{marker} not found in adata, skipping thresholding.")
                     
-        print('Completed!')
+        logg.print('Completed!')
         if 'fancy' in mode: 
             try: 
                 from ipywidgets import Button, Output
@@ -1100,23 +1100,30 @@ class Hierarchy:
         string_graphviz = string_graphviz + '}'
         return string_graphviz   
     
-    def publication_export(self, batches: Optional[List[str]]=None, filepath: str=''):
+    def publication_export(self, adata: Optional[anndata.AnnData]=None,
+                           batches: Optional[List[str]]=None, data_key: Optional[str]=None,
+                           filepath: str=''):
         """
         Creates a formatted csv files of your hierarchy, including its high confidence definitions and thresholds. 
         The resulting file will have two sheets, one with subset name, parent subset, positive features, and negative features. 
         The other with thresholds for each marker for each of the batches.
-    
+
         Currently in beta.
         Assumes no "+" symbol present in feature names. 
+        Does not support categorical value cutoff layers (i.e. not True/False).
 
         Parameters
         ----------
         h
             Hierarchy object to use for definitions
+        adata
+            Adata to use to lookup gene names, with genes in the .X, 
         batches
             A list of batches to find thresholds for. If None, just creates thresholds for a single batch
+        data_key
+            Used to point to a key in .layers or in .obsm to check for marker names
         filepath
-            path where the xlsx file is saved
+            path where the csv files are saved
         """
         # Create the hierarchy sheet
         df = []
@@ -1141,11 +1148,16 @@ class Hierarchy:
                         carry_over = '' #in case feature names have spaces
                         for single in singles:
                             single = carry_over + single
+                            if adata is None:
+                                val = single[:len(single) - 1]
+                            else:
+                                val = utils.get_data(adata,single[:len(single) - 1], preferred_data_key=data_key, return_source=True)[1]
+
                             if single[-1] == '+':
-                                pos += ', ' + single[:len(single) - 1]
+                                pos += ', ' + val
                                 carry_over = ''
                             elif single[-1] == '-':
-                                neg += ', ' + single[:len(single) - 1]
+                                neg += ', ' + val
                                 carry_over = ''
                             else:
                                 carry_over = single
@@ -1153,37 +1165,162 @@ class Hierarchy:
                         neg = neg.replace(', ', '', 1)
 
                     if '+' in feature_line:
-                        pos += feature_line.replace('[', '').replace(']', '').replace('+)',')').replace('+',',')
+                        markers = feature_line.split('+')[:-1] # could have , or ( 
+                        markers = [m[max(m.rfind(' '),m.rfind('('))+1:] for m in markers] # isolates only the markers
+                        if adata is None:
+                            vals = markers
+                        else:
+                            vals = [utils.get_data(adata,m, preferred_data_key=data_key, return_source=True)[1] for m in markers]
+                        for i in range(len(markers)):
+                            feature_line = feature_line.replace(markers[i], vals[i])
+                            
+                        feature_line = feature_line.replace('[', '').replace(']', '').replace('+)',')').replace('+',',')
+                        pos += feature_line
                     else:
-                        neg += feature_line.replace('[', '').replace(']', '').replace('- ', ', ').replace('-)',')')
+                        markers = feature_line.split('- ')[:-1] # could have , or ( 
+                        markers = [m[max(m.rfind(','),m.rfind('('))+1:] for m in markers] # isolates only the markers
+                        if adata is None:
+                            vals = markers
+                        else:
+                            vals = [utils.get_data(adata,m, preferred_data_key=data_key, return_source=True)[1] for m in markers]
+                        for i in range(len(markers)):
+                            feature_line = feature_line.replace(markers[i], vals[i])
+                            
+                        feature_line = feature_line.replace('[', '').replace(']', '').replace('- ', ', ').replace('-)',')')
+                        neg += feature_line
                     row.append(pos)
                     row.append(neg)
             if len(row) > 0:
                 df.append(row)
         df = pd.DataFrame(df, columns=['Subset','Parent','Positive Features','Negative Features'])
-        
+
         # Create the thresholds sheet
-        if batches is None:
-            batches = ['']
-        else:
-            batches = [' '+batch for batch in batches]
+        if batches is None or isinstance(batches, str):
+            batches = [batches]
+        batches = ['' if b is None else b for b in batches]
         columns = []
         for batch in batches:
-            columns.extend(['Negative Threshold'+batch, 'Positive Threshold'+batch])
+            columns.extend(['Negative Threshold '+batch, 'Positive Threshold '+batch])
 
         thresh_df = pd.DataFrame(columns=columns)
         for level in self.get_classifications():
             markers = self.classification_markers(level)[0]
             for i in markers:
-                for batch in batches:
-                    thresh = sorted(self.get_threshold_info(i,None,batch)[1])
-                    thresh_df.loc[i,['Negative Threshold'+batch, 'Positive Threshold'+batch]] = thresh        
-        
+                try:
+                    if adata is None:
+                        val = i
+                    else:
+                        val = utils.get_data(adata,i, preferred_data_key=data_key, return_source=True)[1]
+
+                    for batch in batches:
+                        thresh = sorted(self.get_threshold_info(i,None,batch)[1])
+                        thresh_df.loc[val,['Negative Threshold '+batch, 'Positive Threshold '+batch]] = thresh    
+                except:
+                    if batch == '':
+                        logg.warn(f'Batchless threshold not availible for marker {i}')
+                    else:
+                        logg.warn(f'No threshold availible for marker {i} for batch {batch}')
+
         # Save the csv files
-        df.to_csv(filepath+'_hierarchy.csv')
+        df.to_csv(filepath+'_hierarchy.csv', index=False)
         thresh_df.to_csv(filepath+'_thresholds.csv')
         return
+    
 
+    def get_optimal_clf_kwargs(self, levels: Union[str,list]=None, kwargs: Union[str,list]=None) -> pd.DataFrame:
+        """
+        Provides the clf kwargs used in classification at specified leves of the classifier.
+        This function can be usful for extracting the optimal hyperparameters found through hyperparameter optimization.
+        
+        Currently in beta.
+        
+        Parameters
+        ----------
+        h
+            Hierarchy object to use to find kwargs
+        levels
+            Classification level(s) of MMoCHi to query for kwargs
+        kwargs
+            Which classification hyperparameters or other kwargs to search
+            
+        Returns
+        -------
+        df
+            Dataframe with levels as indices and kwargs as columnss
+            
+        """
+        if levels is None:
+            levels = self.get_classifications()
+        if isinstance(levels,str):
+            levels = [levels]
+        if kwargs is None:
+            kwargs = ['n_estimators','max_depth','max_features','bootstrap']
+        if isinstance(kwargs,str):
+            kwargs = [kwargs]
+
+        l2 = []
+        for level in levels:
+            try:
+                if not self.get_info(level,'is_cutoff'):
+                    l2.append(level)
+            except:
+                logg.warn(f"Invalid level name {level}")
+        levels = l2
+
+        df = pd.DataFrame(index=levels,columns=kwargs)
+        for level in levels:
+            clf = self.get_clf(level,base=True)[0]
+            assert not clf is None, f"Training has not been run yet at level {level}"
+            for kwarg in kwargs:
+                df.at[level,kwarg] = clf.__dict__[kwarg]
+        return df
+    def get_clf_kwargs(self, levels: Union[str,list]=None, kwargs: Union[str,list]=None) -> pd.DataFrame:
+        """
+        Provides the default clf kwargs from the hierarchy.
+        
+        Currently in beta.
+        
+        Parameters
+        ----------
+        h
+            Hierarchy object to use to find kwargs
+        levels
+            Classification level(s) of MMoCHi to query for kwargs
+        kwargs
+            Which classification hyperparameters or other kwargs to search
+            
+        Returns
+        -------
+        df
+            Dataframe with levels as indices and kwargs as columnss
+            
+        """
+        if levels is None:
+            levels = self.get_classifications()
+        if isinstance(levels,str):
+            levels = [levels]
+        if kwargs is None:
+            kwargs = ['n_estimators','max_depth','max_features','bootstrap']
+        if isinstance(kwargs,str):
+            kwargs = [kwargs]
+            
+        l2 = []
+        for level in levels:
+            try:
+                if not self.get_info(level,'is_cutoff'):
+                    l2.append(level)
+            except:
+                logg.warn(f"Invalid level name {level}")
+        levels = l2
+        
+        df = pd.DataFrame(index=levels,columns=kwargs)
+        for level in levels:
+            for kwarg in kwargs:
+                df.at[level, kwarg] = self.get_info('Broad Lineages','clf_kwargs')[kwarg]
+        return df
+        
+    
+    
 class Subset:
     '''
     A Hierarchy building block, describing a population of cells beneath a classification layer. These can be added to a Hierarchy using the `.add_subset()` method
@@ -1245,7 +1382,7 @@ class Classification:
     hyperparameters
         Key value pairs where the key is the name of a hyperparameter and the value are the possible values that the hyperparameter should check in optimization. eg. bootstrap: [True, False]
     hyperparameter_min_improvement
-        Minimum increase (0.01 = 1%) in performance of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value
+        Minimum increase in performance (as measured by balanced_accuracy) of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value. You can use -1 to prevent any early-stopping based on minimum improvement.     
     hyperparameter_optimization_cap
         Value for the balanced accuracy score at which hyperparameter optimization will stop for that level. If none provided, 1.0 (perfect) will be used.
     clf_kwargs
@@ -1260,11 +1397,11 @@ class Classification:
                  feature_names: Optional[List[str]]=None,
                  is_cutoff: Optional[bool]=False, max_training: Optional[int]=None,
                  force_spike_ins=[], calibrate: Optional[bool]=None,
-                 optimize_hyperparameters: bool=None, hyperparameter_order: list=None, 
-                 hyperparameters: dict=None,
-                 hyperparameter_min_improvement: Union[dict,float]=0.004,
-                 hyperparameter_optimization_cap: float=0.98,
-                 clf_kwargs: dict={}):
+                 optimize_hyperparameters: Optional[bool]=None, hyperparameter_order: Optional[list]=None, 
+                 hyperparameters: Optional[dict]=None,
+                 hyperparameter_min_improvement: Optional[Union[dict,float]]=None,
+                 hyperparameter_optimization_cap: Optional[float]=None,
+                 clf_kwargs: dict=None):
         self.markers = markers
         if is_cutoff == True:
             self.is_cutoff = True

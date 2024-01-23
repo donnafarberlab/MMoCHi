@@ -1,6 +1,6 @@
 # Landmark Registration Advice
 
-Manually checking landmark registration can be time consuming, but it's a useful way to ensure effective ADT integration. One tricky step of landmark registration is setting effective `marker_bandwidth` values to maximize on automatic peak detection. In our experience with multiple CITE-seq panels (TotalSeq A, B, and C), the best marker_bandwidth value for individual antibodies are consistent across panels. Thus, to help jumpstart the process, below is a list of some of our modifications to `markder_bandwidth` for various antibodies. For markers not listed, the built-in default (`0.2`) seems to work consistently.
+Manually checking landmark registration can be time consuming, but it's a useful way to ensure effective ADT integration. One tricky step of landmark registration is setting effective `marker_bandwidth` values to maximize on automatic peak detection. In our experience with multiple CITE-seq panels (TotalSeq A, B, and C), the best marker_bandwidth value for individual antibodies are consistent across panels. Thus, to help jumpstart the process, below is a list of some of our modifications to `marker_bandwidth` for various antibodies. For markers not listed, the built-in default (`0.2`) seems to work consistently.
 
 We hope to continue to update this page, expanding advice to additional antibody panels and sample types! If you have any input, click [here](https://github.com/donnafarberlab/MMoCHi/issues/), and create a "New issue" button, choose "Submit advice".
 
