@@ -52,21 +52,35 @@ class Hierarchy:
         The default list of Subsets for which training events should be sampled with spike-ins from across batches, even if individual batches
         have enough events for training. This can be useful for cell types that are very heterogenous across batches.
     default_calibrate
-        Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect 
-        the percent of trees in agreement. Calibrated values more-closely reflect the percent of calls correctly made at any given confidence level.
+        Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect the percent of trees in agreement. Calibrated values more-closely reflect the percent of calls correctly made at any given confidence level.
+    default_optimize_hyperparameters
+        Whether to by default perform hyperparameter optimization of the random forest. Optimization occurs via a linear search of potential parameters and significantly slows down the classification process. Note: Aside from n_estimators, the first provided value for each parameter will be used for optimization of earlier hyperparameters.
+    default_hyperparameter_order
+        If optimize_hyperparameters is true, the order in which to perform the linear hyperparameter optimization. Optimization will occur by testing all variations of one hyperparameter before using the best selected one for further optimization. This list should have the same values as the keys of hyperparameters
+    default_hyperparameters
+        If optimize_hyperparameters is true, a dictionary of hyperparameter name to possible values to check for that hyperparameter. The classifier will be fit a number of times equal to the number of values in this dictionary. 
+    default_hyperparameter_min_improvement
+        Default minimum increase in performance (as measured by balanced_accuracy) of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value. You can use -1 to prevent any early-stopping based on minimum improvement. 
+    default_hyperparameter_optimization_cap
+        Default value for the balanced accuracy score at which hyperparameter optimization will stop for that level. If none provided, 1.0 (perfect) will be used.
     load
         Either None (to initiate a new hierarchy) or a path to a hierarchy to load (exclude .hierarchy in the path). Note that loading a hierarchy overrides all other defaults.
     '''
     def __init__(self, default_min_events: Union[int,float]=0.001,
                        default_class_weight: Union[str, dict, List[dict]]='balanced_subsample', 
                        default_clf_kwargs: dict=dict(max_depth=20, n_estimators=100,
-                                                      n_jobs=-1,bootstrap=True,verbose=True),
+                                                      n_jobs=-1,bootstrap=True,verbose=True, max_features='sqrt'),
                        default_in_danger_noise_checker: Union[str,bool]=True, 
                        default_is_cutoff: Union[bool,str]=False, 
                        default_features_limit: Optional[Union[List[str],Dict[str,List[str]]]]=None,
                        default_max_training: int=20000,
                        default_force_spike_ins: List[str]=[], 
                        default_calibrate: bool=True,
+                       default_optimize_hyperparameters: bool=False,
+                       default_hyperparameter_order: List[str]=['n_estimators', 'max_depth', 'max_features', 'bootstrap'],
+                       default_hyperparameters: Dict[str,list]={'n_estimators':[50, 100,200,400,800,1200],'max_depth': [None,10,25],'max_features':['log2','sqrt',0.05,0.1],'bootstrap':[True,False]},
+                       default_hyperparameter_min_improvement: Optional[Union[float,dict]]= {'n_estimators':0.004,'max_features':0.004},
+                       default_hyperparameter_optimization_cap: Optional[float]=0.98,
                        load: Optional[str]=None):
 
         if not load is None:
@@ -82,6 +96,11 @@ class Hierarchy:
             self.default_max_training = default_max_training
             self.default_force_spike_ins = default_force_spike_ins
             self.default_calibrate = default_calibrate
+            self.default_optimize_hyperparameters= default_optimize_hyperparameters
+            self.default_hyperparameter_order = default_hyperparameter_order
+            self.default_hyperparameters = default_hyperparameters
+            self.default_hyperparameter_min_improvement = default_hyperparameter_min_improvement
+            self.default_hyperparameter_optimization_cap = default_hyperparameter_optimization_cap
             self.tree = treelib.Tree()
             self.tree.create_node("All","All",data=Subset("root")) #creating a root node
             self.reset_thresholds()
@@ -233,7 +252,10 @@ class Hierarchy:
             tag = tag + f"=={values['OTHER']} ".join(values['other']) + f"=={values['OTHER']} "
 
         if 'any_of' in values:
-            tag = tag[:-1] + ') and ['
+            if 'neg' in values.keys() or 'pos' in values or 'other' in values:
+                tag = tag[:-1] + ') and ['
+            else:
+                tag = tag[:-1] + '['
             if not type(values['any_of'][0]) is list:
                 values['any_of'] = [values['any_of']]
             if not 'n' in values:
@@ -736,7 +758,8 @@ class Hierarchy:
                            data_key: str=utils.DATA_KEY, batch_key: str=None,
                            mode: str='fill in', interactive: bool=True,
                            plot: bool=True, limit: Optional[Union[str, List[str]]]=None, 
-                           batch_marker_order: bool=False, skip: List[str]=[]):
+                           batch_marker_order: bool=False, skip: List[str]=[], bins: int=100,
+                          external_holdout: bool=False, key_added: str = 'lin'):
         '''
         Runs thresholding using the `thresholding.threshold()` function. First uses `mmc.get_data` to search for marker.
         If marker is not found in AnnData, gives up and ask whether to label it as interactive or not.
@@ -764,7 +787,20 @@ class Hierarchy:
             Whether to order by batch first or marker first (as the outer loop). If true, marker is the outer loop.
         skip
             Markers to skip for thresholding
+        bins
+            The number of bins to include in the histograms
+        external_holdout
+            If external hold out was defined in adata.obsm[key_added], removes external hold out from automatic threshold calculations and from graphs used for manual thresholding
+        key_added
+            If external_holdout is true, the place in adata.obsm[key_added] to search for the external hold out column (bool T F column used to indicate whether an event should be set aside for hold out)
         '''
+        if external_holdout:
+            try:
+                 external_holdout_mask = adata.obsm[key_added]['external_holdout']
+            except:
+                assert False, f'Did not create external hold out in adata.obsm[{key_added}]'
+        else:
+            external_holdout_mask = [True] * len(adata)
         all_markers, all_levels = [], []
         for classification in self.get_classifications():
             for marker in self.tree[classification].data.markers:
@@ -790,7 +826,7 @@ class Hierarchy:
         if 'fancy' in mode:
             fancy_resolution = []
 
-        batch_iterable = zip(*utils.batch_iterator(adata,batch_key))
+        batch_iterable = zip(*utils.batch_iterator(adata[external_holdout_mask],batch_key))
         marker_iterable = zip(markers, levels)
         if batch_marker_order:
             iterable = itertools.product(batch_iterable,marker_iterable)
@@ -811,14 +847,14 @@ class Hierarchy:
                 t=None
 
             if not level is None:
-                print(f'On level {level}')
+                logg.print(f'On level {level}')
             try: 
-                threshold = thresholding.threshold(marker,adata[mask],data_key,preset_threshold=t,
+                threshold = thresholding.threshold(marker,adata[external_holdout_mask][mask],data_key,preset_threshold=t,
                                          include_zeroes=False, n=0, force_model=False,
                                          plot=plot, interactive=interactive, fancy='fancy' in mode, run=False,
-                                         title_addition= '' if batch_key is None else batch)
+                                         title_addition= '' if batch_key is None else batch,bins=bins)
                 if not 'fancy' in mode:
-                    print(threshold)
+                    logg.print(threshold)
                     self.set_threshold(marker,threshold, False, level, batch)
                 else:
                     fancy_resolution.append((marker, threshold, level, batch))
@@ -826,7 +862,7 @@ class Hierarchy:
                 # logg.warning(f'Ran into error, skipping marker...', exc_info=1)
                 logg.warning(f"{marker} not found in adata, skipping thresholding.")
                     
-        print('Completed!')
+        logg.print('Completed!')
         if 'fancy' in mode: 
             try: 
                 from ipywidgets import Button, Output
@@ -980,7 +1016,8 @@ class Hierarchy:
             plt = IPython.display.Image(graph.create_png())
             IPython.display.display(plt)
         else:
-            self.tree.show()
+            print(self.tree.show(stdout=False))
+            #self.tree.show()
         if return_graph and plot:
             return graph
         return
@@ -1062,7 +1099,228 @@ class Hierarchy:
             string_graphviz = string_graphviz + '\t' + c + '\n'
         string_graphviz = string_graphviz + '}'
         return string_graphviz   
+    
+    def publication_export(self, adata: Optional[anndata.AnnData]=None,
+                           batches: Optional[List[str]]=None, data_key: Optional[str]=None,
+                           filepath: str=''):
+        """
+        Creates a formatted csv files of your hierarchy, including its high confidence definitions and thresholds. 
+        The resulting file will have two sheets, one with subset name, parent subset, positive features, and negative features. 
+        The other with thresholds for each marker for each of the batches.
 
+        Currently in beta.
+        Assumes no "+" symbol present in feature names. 
+        Does not support categorical value cutoff layers (i.e. not True/False).
+
+        Parameters
+        ----------
+        h
+            Hierarchy object to use for definitions
+        adata
+            Adata to use to lookup gene names, with genes in the .X, 
+        batches
+            A list of batches to find thresholds for. If None, just creates thresholds for a single batch
+        data_key
+            Used to point to a key in .layers or in .obsm to check for marker names
+        filepath
+            path where the csv files are saved
+        """
+        # Create the hierarchy sheet
+        df = []
+        for node in self.tree.all_nodes():
+            row = []
+            if isinstance(node.data, Subset) and node.identifier != "All":
+                row.append(node.identifier)
+                row.append(self.classification_parents(node.identifier)[1])
+                feature_line = node.tag.replace(node.identifier + ' ', '')
+                if 'True' in feature_line:
+                    row.append('*' + feature_line[1:feature_line.find('==True')] + '*')
+                    row.append('')
+                elif 'False' in feature_line:
+                    row.append('')
+                    row.append('*' + feature_line[1:feature_line.find('==False')] + '*')
+                else:
+                    pos = ''
+                    neg = ''
+                    if feature_line[0] == '(':
+                        singles = feature_line[1:feature_line.find(')')].split(' ')
+                        feature_line = feature_line.replace(feature_line[:feature_line.find(')')+ 6], '')
+                        carry_over = '' #in case feature names have spaces
+                        for single in singles:
+                            single = carry_over + single
+                            if adata is None:
+                                val = single[:len(single) - 1]
+                            else:
+                                val = utils.get_data(adata,single[:len(single) - 1], preferred_data_key=data_key, return_source=True)[1]
+
+                            if single[-1] == '+':
+                                pos += ', ' + val
+                                carry_over = ''
+                            elif single[-1] == '-':
+                                neg += ', ' + val
+                                carry_over = ''
+                            else:
+                                carry_over = single
+                        pos = pos.replace(', ', '', 1)
+                        neg = neg.replace(', ', '', 1)
+
+                    if '+' in feature_line:
+                        markers = feature_line.split('+')[:-1] # could have , or ( 
+                        markers = [m[max(m.rfind(' '),m.rfind('('))+1:] for m in markers] # isolates only the markers
+                        if adata is None:
+                            vals = markers
+                        else:
+                            vals = [utils.get_data(adata,m, preferred_data_key=data_key, return_source=True)[1] for m in markers]
+                        for i in range(len(markers)):
+                            feature_line = feature_line.replace(markers[i], vals[i])
+                            
+                        feature_line = feature_line.replace('[', '').replace(']', '').replace('+)',')').replace('+',',')
+                        pos += feature_line
+                    else:
+                        markers = feature_line.split('- ')[:-1] # could have , or ( 
+                        markers = [m[max(m.rfind(','),m.rfind('('))+1:] for m in markers] # isolates only the markers
+                        if adata is None:
+                            vals = markers
+                        else:
+                            vals = [utils.get_data(adata,m, preferred_data_key=data_key, return_source=True)[1] for m in markers]
+                        for i in range(len(markers)):
+                            feature_line = feature_line.replace(markers[i], vals[i])
+                            
+                        feature_line = feature_line.replace('[', '').replace(']', '').replace('- ', ', ').replace('-)',')')
+                        neg += feature_line
+                    row.append(pos)
+                    row.append(neg)
+            if len(row) > 0:
+                df.append(row)
+        df = pd.DataFrame(df, columns=['Subset','Parent','Positive Features','Negative Features'])
+
+        # Create the thresholds sheet
+        if batches is None or isinstance(batches, str):
+            batches = [batches]
+        batches = ['' if b is None else b for b in batches]
+        columns = []
+        for batch in batches:
+            columns.extend(['Negative Threshold '+batch, 'Positive Threshold '+batch])
+
+        thresh_df = pd.DataFrame(columns=columns)
+        for level in self.get_classifications():
+            markers = self.classification_markers(level)[0]
+            for i in markers:
+                try:
+                    if adata is None:
+                        val = i
+                    else:
+                        val = utils.get_data(adata,i, preferred_data_key=data_key, return_source=True)[1]
+
+                    for batch in batches:
+                        thresh = sorted(self.get_threshold_info(i,None,batch)[1])
+                        thresh_df.loc[val,['Negative Threshold '+batch, 'Positive Threshold '+batch]] = thresh    
+                except:
+                    if batch == '':
+                        logg.warn(f'Batchless threshold not availible for marker {i}')
+                    else:
+                        logg.warn(f'No threshold availible for marker {i} for batch {batch}')
+
+        # Save the csv files
+        df.to_csv(filepath+'_hierarchy.csv', index=False)
+        thresh_df.to_csv(filepath+'_thresholds.csv')
+        return
+    
+
+    def get_optimal_clf_kwargs(self, levels: Union[str,list]=None, kwargs: Union[str,list]=None) -> pd.DataFrame:
+        """
+        Provides the clf kwargs used in classification at specified leves of the classifier.
+        This function can be usful for extracting the optimal hyperparameters found through hyperparameter optimization.
+        
+        Currently in beta.
+        
+        Parameters
+        ----------
+        h
+            Hierarchy object to use to find kwargs
+        levels
+            Classification level(s) of MMoCHi to query for kwargs
+        kwargs
+            Which classification hyperparameters or other kwargs to search
+            
+        Returns
+        -------
+        df
+            Dataframe with levels as indices and kwargs as columnss
+            
+        """
+        if levels is None:
+            levels = self.get_classifications()
+        if isinstance(levels,str):
+            levels = [levels]
+        if kwargs is None:
+            kwargs = ['n_estimators','max_depth','max_features','bootstrap']
+        if isinstance(kwargs,str):
+            kwargs = [kwargs]
+
+        l2 = []
+        for level in levels:
+            try:
+                if not self.get_info(level,'is_cutoff'):
+                    l2.append(level)
+            except:
+                logg.warn(f"Invalid level name {level}")
+        levels = l2
+
+        df = pd.DataFrame(index=levels,columns=kwargs)
+        for level in levels:
+            clf = self.get_clf(level,base=True)[0]
+            assert not clf is None, f"Training has not been run yet at level {level}"
+            for kwarg in kwargs:
+                df.at[level,kwarg] = clf.__dict__[kwarg]
+        return df
+    def get_clf_kwargs(self, levels: Union[str,list]=None, kwargs: Union[str,list]=None) -> pd.DataFrame:
+        """
+        Provides the default clf kwargs from the hierarchy.
+        
+        Currently in beta.
+        
+        Parameters
+        ----------
+        h
+            Hierarchy object to use to find kwargs
+        levels
+            Classification level(s) of MMoCHi to query for kwargs
+        kwargs
+            Which classification hyperparameters or other kwargs to search
+            
+        Returns
+        -------
+        df
+            Dataframe with levels as indices and kwargs as columnss
+            
+        """
+        if levels is None:
+            levels = self.get_classifications()
+        if isinstance(levels,str):
+            levels = [levels]
+        if kwargs is None:
+            kwargs = ['n_estimators','max_depth','max_features','bootstrap']
+        if isinstance(kwargs,str):
+            kwargs = [kwargs]
+            
+        l2 = []
+        for level in levels:
+            try:
+                if not self.get_info(level,'is_cutoff'):
+                    l2.append(level)
+            except:
+                logg.warn(f"Invalid level name {level}")
+        levels = l2
+        
+        df = pd.DataFrame(index=levels,columns=kwargs)
+        for level in levels:
+            for kwarg in kwargs:
+                df.at[level, kwarg] = self.get_info('Broad Lineages','clf_kwargs')[kwarg]
+        return df
+        
+    
+    
 class Subset:
     '''
     A Hierarchy building block, describing a population of cells beneath a classification layer. These can be added to a Hierarchy using the `.add_subset()` method
@@ -1117,6 +1375,16 @@ class Classification:
         have enough events for training. This can be useful for cell types that are very heterogenous across batches.
     calibrate
         Default for whether to perform calibration on the prediction probabilities of the random forest classifier. Uncalibrated values reflect the % of trees in agreement. Calibrated values more-closely reflect the % of calls correctly made at any given confidence level.
+    optimize_hyperparameters
+        Whether to optimize the classifier using the provided hyperparameters and possible values and balanced accuracy score as the optimization's cost function. Note: Optimization validation will be performed on untrained and uncalibrated data from the randomly set aside data indicated by .obsm[key_added][level + '_opt_holdout']
+    hyperparameter_order
+        The order of the parameters in hyperparameters to search through using linear optimization. Note: the values in hyperparameter_order must match the keys of hyperparameters
+    hyperparameters
+        Key value pairs where the key is the name of a hyperparameter and the value are the possible values that the hyperparameter should check in optimization. eg. bootstrap: [True, False]
+    hyperparameter_min_improvement
+        Minimum increase in performance (as measured by balanced_accuracy) of n_estimators and max_features hyperparameters before stopping optimization. May also provide dictionary with feature as the key and minimum increase as the value. You can use -1 to prevent any early-stopping based on minimum improvement.     
+    hyperparameter_optimization_cap
+        Value for the balanced accuracy score at which hyperparameter optimization will stop for that level. If none provided, 1.0 (perfect) will be used.
     clf_kwargs
         The keyword arguments for classification. For more information about other kwargs that can be set, please see: 
         sklearn.ensemble.RandomForestClassifier. In the case of batch-integrated classification, n_estimators refers to the (approximate) total trees in the forest.
@@ -1129,7 +1397,11 @@ class Classification:
                  feature_names: Optional[List[str]]=None,
                  is_cutoff: Optional[bool]=False, max_training: Optional[int]=None,
                  force_spike_ins=[], calibrate: Optional[bool]=None,
-                 clf_kwargs: dict={}):
+                 optimize_hyperparameters: Optional[bool]=None, hyperparameter_order: Optional[list]=None, 
+                 hyperparameters: Optional[dict]=None,
+                 hyperparameter_min_improvement: Optional[Union[dict,float]]=None,
+                 hyperparameter_optimization_cap: Optional[float]=None,
+                 clf_kwargs: dict=None):
         self.markers = markers
         if is_cutoff == True:
             self.is_cutoff = True
@@ -1150,6 +1422,11 @@ class Classification:
             self.max_training = max_training
             self.force_spike_ins = force_spike_ins
             self.calibrate = calibrate
+            self.optimize_hyperparameters = optimize_hyperparameters
+            self.hyperparameter_order = hyperparameter_order
+            self.hyperparameters = hyperparameters
+            self.hyperparameter_min_improvement = hyperparameter_min_improvement
+            self.hyperparameter_optimization_cap = hyperparameter_optimization_cap
         return
 
 def hc_defs(marker_list: List[str], pos: Union[List[str],str]=[],

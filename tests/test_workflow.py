@@ -113,6 +113,8 @@ def test_update_peak_overrides(kwargs):
                               ids=['defaults','show','show3','set_marker_bandwidth',
                                    'single_peaks','peak_override','single_positive','single_negative','single_pos_string','peak_overrides_file'])
 def test_landmark(data_load,kwargs):
+    mmc.define_external_holdout(data_load)
+    adata = mmc.landmark_register_adts(data_load,'batch',data_key='protein',inclusion_mask = ~data_load.obsm['lin']['external_holdout'],**kwargs)
     adata = mmc.landmark_register_adts(data_load,'batch',data_key='protein',**kwargs)
     assert 'landmark_protein' in adata.obsm.keys()
     for i in adata.obsm['protein'].columns:
@@ -256,7 +258,12 @@ def test_hierarchy_load_thresholds(test_hierarchy):
     assert hierarchy.get_all_markers() == set(['CD14','CD33','MARCO','MERTK','CD3','CD19','CD127','JCHAIN','CD56'])
     return hierarchy
 
+# @pytest.mark.xfail(reason="Issue in sc.pl.embedding cmap handling making it incompatible with matplotlib v3.5.3")
 def test_umap_thresh(landmarked, test_hierarchy_load_thresholds):
+    print(mmc.__path__)
+    import matplotlib
+    print(matplotlib.__path__)
+
     landmarked.obsm['X_umap'] = np.ones((len(landmarked),2))
     mmc.utils.umap_thresh(landmarked,test_hierarchy_load_thresholds,batch_key='batch')   
     
@@ -264,16 +271,16 @@ def _verify_lin(adata, classification_levels):
     levels = [i for i in classification_levels if i != 'Removal']
     for level in levels:
         hc_na = adata.obsm['lin'][level+'_hc'].isna()
-        holdout_na = adata.obsm['lin'][level+'_hold_out'] == False
+        holdout_na = adata.obsm['lin'][level+'_holdout'] == False
         tcounts_na = adata.obsm['lin'][level+'_traincounts'].isna()
         train_na = adata.obsm['lin'][level+'_train'] == False
         proba_na = adata.obsm['lin'][level+'_probability'].isna()
         class_na = adata.obsm['lin'][level+'_class'].isna()
         assert all(adata.obsm['lin'][hc_na & holdout_na & tcounts_na & train_na & proba_na & class_na] == adata.obsm['lin'][hc_na])
-        assert sum(adata.obsm['lin'][level+'_hold_out'][~holdout_na] & adata.obsm['lin'][level+'_train'][~train_na]) == 0
+        assert sum(adata.obsm['lin'][level+'_holdout'][~holdout_na] & adata.obsm['lin'][level+'_train'][~train_na]) == 0
         assert sum((~adata.obsm['lin'][level+'_train'][~holdout_na]) & (adata.obsm['lin'][level+'_traincounts'][~holdout_na] > 0)) == 0
         assert sum((adata.obsm['lin'][level+'_train'][~holdout_na]) & ~(adata.obsm['lin'][level+'_traincounts'][~train_na] > 0)) == 0
-
+        assert sum(["_error" in x for x in adata.obsm['lin'].columns]) == 0, "no failed columns"
         
         
 def test_classify_cutoff(landmarked, test_hierarchy_load_thresholds):
@@ -281,9 +288,12 @@ def test_classify_cutoff(landmarked, test_hierarchy_load_thresholds):
     test_hierarchy_load_thresholds = test_hierarchy_load_thresholds.copy()
     test_hierarchy_load_thresholds.check_all_markers(landmarked,'landmark_protein')
     test_hierarchy_load_thresholds.default_is_cutoff = True
+    mmc.define_external_holdout(landmarked)
     adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
                                    'landmark_protein', batch_key='batch',
                                    retrain = True)
+    hierarchy.publication_export(adata, data_key='landmark_protein')
+    hierarchy.publication_export(data_key='landmark_protein')
     adata = mmc.terminal_names(adata)
     adata = mmc.terminal_names(adata,voting_reference='batch')
     mmc.classifier.DEBUG_ERRORS = False
@@ -304,7 +314,12 @@ def test_classify_nparray(landmarked, test_hierarchy_load_thresholds):
 def test_classify_defaults(landmarked, test_hierarchy_load_thresholds):
     mmc.classifier.DEBUG_ERRORS = True
     test_hierarchy_load_thresholds.check_all_markers(landmarked,'landmark_protein')
-
+    if 'external_holdout' in landmarked.obsm['lin'].columns:
+        landmarked.obsm['lin'].drop('external_holdout',axis=1,inplace=True)
+    adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
+                                   'landmark_protein', batch_key='batch',
+                                   retrain = True)
+    mmc.define_external_holdout(landmarked)
     adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
                                    'landmark_protein', batch_key='batch',
                                    retrain = True)
@@ -326,13 +341,23 @@ def test_classify_defaults(landmarked, test_hierarchy_load_thresholds):
     _verify_lin(adata, hierarchy.get_classifications())
     return
 
+def _check_external_holdout(adata, level):
+    assert sum(adata.obsm['lin']['external_holdout']) > 0, "nothing marked as external hold out"
+    assert sum(adata.obsm['lin']['external_holdout']) != len(adata.obsm['lin']['external_holdout']), "everything marked as external hold out"
+    assert sum(adata.obsm['lin']['external_holdout'] & adata.obsm['lin'][level + '_holdout']) == 0, "external and internal hold out overlap"
+    assert sum(adata.obsm['lin']['external_holdout'] & adata.obsm['lin'][level + '_opt_holdout']) == 0, "external and opt overlap"
+    assert sum(adata.obsm['lin'][level + '_holdout'] & adata.obsm['lin'][level + '_opt_holdout']) == 0, "opt and hold out overlap"
+    return
+    
 def test_various_settings(landmarked,test_hierarchy_load_thresholds):
     mmc.classifier.DEBUG_ERRORS = True
     h = mmc.Hierarchy(load='docs/data/test')
     h.default_min_events=1
 
     landmarked.var['to_use'] = list([True,True,True,False]*len(landmarked.var_names))[0:len(landmarked.var_names)]
-    print('run 1')
+    # print('run 1')
+    if 'external_holdout' in landmarked.obsm['lin'].columns:
+        landmarked.obsm['lin'].drop('external_holdout',axis=1,inplace=True)
     adata,hierarchy = mmc.classify(landmarked, h.copy(), 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True,features_limit='to_use',
                                    reduce_features_min_cells=0) 
@@ -345,51 +370,87 @@ def test_various_settings(landmarked,test_hierarchy_load_thresholds):
                                                 landmark_protein=['CD19','CD3','CD20','cat'])
     h2.tree['Lymphoid'].data.features_limit = [i+'_mod_GEX' for i in landmarked.var_names]
 
-    print('run 2')
+    # print('run 2: limit features, external hold out column made but unused')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True)
     _verify_lin(adata, hierarchy.get_classifications())
     h2 = h.copy()
     h2.default_force_spike_ins = ['Lymphocyte']
-    print('run 3')
+    # print('run 3: force spike ins')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True,
                                    skip_to='Gross',end_at='Gross')
     _verify_lin(adata, ['Gross',])
     h2 = h.copy()
-    h2.default_calibrate = False
-    print('run 4')
+    h2.default_force_spike_ins = ['Lymphocyte']
+    # print('run 3.2: force spike ins external hold out')
+    mmc.define_external_holdout(landmarked)
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
-                                   batch_key='batch', retrain = True)
-    _verify_lin(adata, hierarchy.get_classifications())
+                                   batch_key='batch', retrain = True,
+                                   skip_to='Gross',end_at='Gross', external_holdout=True)
+    _verify_lin(adata, ['Gross',])
+    _check_external_holdout(adata, 'Gross')
     h2 = h.copy()
-    print('run 5')
+    h2.default_calibrate = False
+    # print('run 4: no calibration nor external hold out')
+    adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
+                                   batch_key='batch', retrain = True, external_holdout=False)
+    _verify_lin(adata, hierarchy.get_classifications())
+    # print('run 4.2: no calibration, yes external hold out')
+    mmc.define_external_holdout(landmarked)
+    adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
+                                   batch_key='batch', retrain = True, external_holdout=True)
+    _verify_lin(adata, hierarchy.get_classifications())
+    assert sum(adata.obsm['lin']['external_holdout']) > 0, "nothing marked as external hold out"
+    assert sum(adata.obsm['lin']['external_holdout']) != len(adata.obsm['lin']['external_holdout']), "everything marked as external hold out"
+    assert sum(adata.obsm['lin']['external_holdout'] & adata.obsm['lin']['Lymphoid_holdout']) == 0, "external and internal hold out overlap"
+    
+    h2 = h.copy()
+    # print('run 5: no batches')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key=None, retrain = True) 
     _verify_lin(adata, hierarchy.get_classifications())
     mmc.classifier.DEBUG_ERRORS = False
+    sh2 = h.copy()
+    # print('run 5.2: no batches, external hold out')
+    mmc.define_external_holdout(landmarked)
+    adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
+                                   batch_key=None, retrain = True, external_holdout=True) 
+    _verify_lin(adata, hierarchy.get_classifications())
+    _check_external_holdout(adata, 'Lymphoid')
+    mmc.classifier.DEBUG_ERRORS = False
+               
     h2 = h.copy()
     h2.default_min_events = 0.5
-    print('run 6')
+    # print('run 6: min events')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', batch_key=None, retrain = True) 
     mmc.classifier.DEBUG_ERRORS = True
     
     h2 = h.copy()
     h2.default_cutoff = True
-    print('run 7')
+    # print('run 7: cutoff')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key=None, retrain = True, reference='batch')  
     _verify_lin(adata, hierarchy.get_classifications())
     
-    print('run 8')
+    # print('run 8: probability cutoff')
     adata,hierarchy = mmc.classify(landmarked, h.copy(), 'lin', 'landmark_protein', 
                                batch_key='batch', retrain = True, probability_cutoff=0.8) 
     _verify_lin(adata, hierarchy.get_classifications())
+               
     h2 = h.copy()
     h2.default_in_danger_noise_checker = 'danger and noise and rebalance'
-    print('run 9')
+    # print('run 9: in danger noise and rebalance')
     adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
                                    batch_key='batch', retrain = True)   
+    mmc.classifier.DEBUG_ERRORS = False
+    h2 = h.copy()
+    h2.default_in_danger_noise_checker = 'danger and noise and rebalance'
+    # print('run 9.2: in danger noise and rebalance, external hold out')
+    mmc.define_external_holdout(landmarked)
+    adata,hierarchy = mmc.classify(landmarked, h2, 'lin', 'landmark_protein', 
+                                   batch_key='batch', retrain = True, external_holdout=True)   
+    _check_external_holdout(adata, 'Lymphoid')
     mmc.classifier.DEBUG_ERRORS = False
     
 def test_classify_weights(landmarked, test_hierarchy_load_thresholds):

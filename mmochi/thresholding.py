@@ -58,7 +58,7 @@ def _run_threshold(data: np.array, thresh: Sequence[Union[int,float]]) -> np.arr
 
 def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
                     msw: Tuple[Tuple[float], Tuple[float],Tuple[float]], markname_full: str,
-                    title_addition: str='') -> None:
+                    title_addition: str='', bins: int=100) -> None:
     '''
     Using the thresholds provided, performs and plots the histogram of the thresholds. If msw is provided, plots the Gaussian mixture model as well.
     
@@ -79,6 +79,8 @@ def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
         Name of the marker, to be used in the title of the graph
     title_addition
         Other information you would like to include in the title after the marker name
+    bins
+        The number of bins to plot in the histogram
     '''
     mask = data > 0
     data = data[mask]
@@ -86,7 +88,7 @@ def _plot_threshold(data: np.array, thresh: Sequence[Union[float,int]],
     fig = plt.figure(figsize=(8,2),dpi=75)
     hist = plt.hist((data[data>=max(thresh)],data[data<=min(thresh)],
                      data[(data>min(thresh)) & (data<max(thresh))]),
-                     bins=100,stacked=True,density=True, color=['#ff7f0e',  '#1f77b4', '#2ca02c']) 
+                     bins=bins,stacked=True,density=True, color=['#ff7f0e',  '#1f77b4', '#2ca02c']) 
     if not msw is None:
         (m,s,w) = msw
         x = np.linspace(0,max(data), 10000)
@@ -190,7 +192,8 @@ def threshold(markname: str, adata: anndata.AnnData,
               force_model: bool=False, plot: bool=True,
               title_addition: str='', interactive: bool=True,
               fancy: bool=False,
-              run: bool=False) -> Union[Tuple[float,float], Tuple[Tuple[float,float], List[str]]]:
+              run: bool=False, bins: int=100,
+              external_holdout: bool=False, key_added: str = 'lin') -> Union[Tuple[float,float], Tuple[Tuple[float,float], List[str]]]:
     '''
     Performs thresholding for marker, displays expression distribution (colored by "pos", "?", and "neg") for visualization and interactive adjustment, and optionally returns thresholds and thresholded events.
     Thresholded events are returned as a list of "pos" for positive (at or above the higher threshold), "neg" for 
@@ -225,6 +228,12 @@ def threshold(markname: str, adata: anndata.AnnData,
         Whether to create adjustable float sliders to enter thresholds. Returns a list of float sliders. This should only be used by the run_all_thresholds command.
     run
         Whether to run the thresholding to return thresholded data
+    bins
+        The number of bins to plot in the histogram
+    external_holdout
+            If external hold out was defined in adata.obsm[key_added], removes external hold out from threshold calculations and from graphs used for manual thresholding
+    key_added
+        If external_holdout is true, the place in adata.obsm[key_added] to search for the external hold out column (bool T F column used to indicate whether an event should be set aside for hold out)
     Returns
     -------
     thresh:
@@ -233,14 +242,21 @@ def threshold(markname: str, adata: anndata.AnnData,
         if run == true returns thresholded data index aligned to thresh, with values of "pos", "neg", and "?".
     
     '''
+    if external_holdout:
+        try:
+            external_holdout_mask = adata.obsm[key_added]['external_holdout']
+        except:
+            assert False, f'Did not create external hold out in adata.obsm[{key_added}]'
+    else:
+        external_holdout_mask = [True] * len(adata)
     if markname.endswith("_lo") or markname.endswith("_hi"):
         ending = markname[-3:]
         markname = markname[:-3]
     else:
         ending = ''
-    data, thresh, msw, markname_full = _calc_threshold(markname,adata,data_key,n,include_zeroes,preset_threshold=preset_threshold, force_model=force_model)
+    data, thresh, msw, markname_full = _calc_threshold(markname,adata[external_holdout_mask],data_key,n,include_zeroes,preset_threshold=preset_threshold, force_model=force_model)
     if plot:
-        _plot_threshold(data, thresh, msw, markname_full+ending,title_addition=title_addition)
+        _plot_threshold(data, thresh, msw, markname_full+ending,title_addition=title_addition,bins=bins)
     if fancy:
         return _fancy_interactive_threshold(thresh, max(data))
     if interactive:
@@ -305,7 +321,7 @@ def _calc_threshold(markname: str, adata: anndata.AnnData,
         include_zeros=True
         mask = ~pd.Series(data).isna()
     else:
-        mask = data>0
+        mask = data > 0
     if force_model or (preset_threshold is None and not "_gex" in markname_full):
         masked_data = np.array(data[mask])
         mix1 = GaussianMixture(n_components=1,random_state=20).fit(masked_data.reshape(-1,1))

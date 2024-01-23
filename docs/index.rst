@@ -1,4 +1,4 @@
-MMoCHi - MultiModal Classification Hierarchy
+MMoCHi - MultiModal Classifier Hierarchy
 ********************************************
 
 
@@ -22,5 +22,6 @@ MMoCHi - MultiModal Classification Hierarchy
    CHANGELOG
    tutorials
    Example_Hierarchies
+   Landmark_Registration_Advice
    api
    GitHub <https://github.com/donnafarberlab/MMoCHi>

@@ -8,6 +8,7 @@ import scanpy as sc
 import gc
 from .logger import logg
 import warnings
+import matplotlib.pyplot as plt
 
 DATA_KEY = 'landmark_protein'
 BATCH_KEY = 'batch'
@@ -293,9 +294,9 @@ def marker(adata: anndata.AnnData, parameter: Union[str, List[str]],
         return _marker(parameter, cols, allow_multiple)
         
 def umap_thresh(adata: anndata.AnnData, h,
-                markers: List[str]=None, batch_key: str=BATCH_KEY,
+                markers: Union[str,List[str]]=None, batch_key: str=BATCH_KEY,
                 data_key: Optional[str]=DATA_KEY, umap_basis: str='X_umap',
-                cmap: Optional[List[str]]=None ,**kwargs):
+                cmap: Optional[List[str]]=None, external_holdout: bool=False, key_added: str = 'lin',**kwargs):
     '''
     Plots UMAPs for the listed markers with thresholded expression data for the markers overlayed on top. 
     This visualization can be useful to see where protein and genes are expressed in the UMAP.
@@ -307,7 +308,7 @@ def umap_thresh(adata: anndata.AnnData, h,
     h
         hierarchy object to draw classification markers from
     markers
-        Markers to create UMAPs for
+        Marker(s) to create UMAPs for
         If None (default), creates UMAP for all markers in h
     batch_key
         Name of batch in adata to use for UMAP, uses batch_iterator to find key
@@ -318,16 +319,33 @@ def umap_thresh(adata: anndata.AnnData, h,
         Passed to scanpy.pl.embedding as basis
     cmap
         List of colors or color map information used to color the feature expression on the UMAP
+    external_holdout
+        If external hold out was defined in adata.obsm[key_added], removes external hold out from automatic threshold calculations and from graphs used for manual thresholding
+    key_added
+        If external_holdout is true, the place in adata.obsm[key_added] to search for the external hold out column (bool T F column used to indicate whether an event should be set aside for hold out)
     kwargs
         Arguments to be passed to scanpy.pl.embedding
     
     '''
+    if external_holdout:
+        try:
+             external_holdout_mask = adata.obsm[key_added]['external_holdout']
+        except:
+            assert False, f'Did not create external hold out in adata.obsm[{key_added}]'
+    else:
+        external_holdout_mask = [True] * len(adata)
+
     if markers is None:
         all_markers = []
         for classification in h.get_classifications():
             for mm in h.tree[classification].data.markers:
-                all_markers.append(mm)
+                if mm in adata.obs.columns:
+                    logg.warn(f"{mm} found in adata.obs.columns, skipping...")
+                else:
+                    all_markers.append(mm)
         markers = list(set(all_markers))
+    elif isinstance(markers, str):
+        markers = [markers]
     
     for mm in markers:
         if mm.endswith("_lo") or mm.endswith("_hi"):
@@ -341,8 +359,8 @@ def umap_thresh(adata: anndata.AnnData, h,
             to_del = True
         except:
             m = marker(adata,m.split('_gex')[0],None)
-        data = get_data(adata,m,data_key)
-        for mask,b in zip(*batch_iterator(adata,batch_key)):
+        data = get_data(adata[external_holdout_mask],m,data_key)
+        for mask,b in zip(*batch_iterator(adata[external_holdout_mask],batch_key)):
             t = h.get_threshold_info(mm,None,b,flexible_batch=True)[1]
             t = sorted(t)
             t[-1] = min(t[-1],max(data))
@@ -350,21 +368,27 @@ def umap_thresh(adata: anndata.AnnData, h,
             t[0] = max(t[0],min(data))
             t[-1] = max(t[-1],min(data))
             if not type(cmap) is str:
-                from matplotlib import cm
                 from matplotlib.colors import ListedColormap
                 n_o = np.ceil(2560*(max(data)-max(t))/max(data))
                 n_g = np.ceil(2560*(max(t)-min(t))/max(data))
                 n_b = np.ceil(2560*min(t)/max(data))
-                orange = cm.get_cmap('Oranges')
-                blue = cm.get_cmap('Blues')
-                green = cm.get_cmap('Greens')
+                try: 
+                    from matplotlib import cm
+                    orange = cm.get_cmap('Oranges')
+                    blue = cm.get_cmap('Blues')
+                    green = cm.get_cmap('Greens')
+                except:
+                    orange = plt.get_cmap('Oranges')
+                    blue = plt.get_cmap('Blues')
+                    green = plt.get_cmap('Greens')                    
                 newcolors =  list(blue(np.linspace(0, 1, int(n_b)))[int(np.ceil(0.3*n_b)):int(np.ceil(0.860*n_b))]) + \
                              list(green(np.linspace(0, 1, int(n_g)))[int(np.ceil(0.3*n_g)):int(np.ceil(0.860*n_g))]) + \
                              list(orange(np.linspace(0, 1, int(n_o)))[int(np.ceil(0.3*n_o)):int(np.ceil(0.860*n_o))])
                 newcolors = np.insert(newcolors,0,np.array([.95,.95,.95,1]),axis=0)
                 cmap = ListedColormap(newcolors)
 
-            sc.pl.embedding(adata[mask],basis = umap_basis,color=m,cmap=cmap,vmax=max(data),vmin=0,title=f'{b} {mm}',**kwargs)
+            sc.pl.embedding(adata[external_holdout_mask][mask],basis = umap_basis,color=m,cmap=cmap,vmax=max(data),vmin=0,title=f'{b} {mm}',**kwargs)
+            plt.show()
             gc.collect()
         if to_del:
             del adata.obs[m]
@@ -372,7 +396,7 @@ def umap_thresh(adata: anndata.AnnData, h,
 
 def umap_interrogate_level(adata: anndata.AnnData, level: str, batch_key: str=None,
                             key_added: str='lin', umap_basis: str='X_umap',
-                            cmap: Optional[List[str]] =None,**kwargs):
+                            cmap: Optional[List[str]] = None, **kwargs):
     '''
     Plots UMAPs showing events selected by high-confidence thresholding and used for training and breaks down annotation confusion onto the UMAP. X_umap must be generated before running this function.
         

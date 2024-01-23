@@ -36,7 +36,6 @@ repository_url = "https://github.com/donnafarberlab/MMoCHi"
 
 version = mmochi.__version__
 release = version
-# release = '0.2.2'
 
 # -- General configuration ---------------------------------------------------
 
@@ -46,7 +45,7 @@ release = version
 
 extensions = ['sphinx.ext.napoleon','m2r2','sphinx.ext.autodoc','sphinx_autodoc_typehints',
               'sphinx_rtd_theme','nbsphinx','sphinx.ext.autosectionlabel','sphinx.ext.autosummary',
-              'sphinx_new_tab_link', 'sphinx.ext.intersphinx']
+              'sphinx_new_tab_link', 'sphinx.ext.intersphinx','sphinx_copybutton']
 
 source_suffix = ['.rst','.md']
 templates_path = ['_templates']
@@ -67,7 +66,6 @@ html_context = dict(
     conf_py_path='/docs/',    # Path in the checkout to the docs root
 )
 
-
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True
 
@@ -82,7 +80,6 @@ typehints_defaults = 'braces'
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '.ipynb_checkpoints']
 
-
 # -- Options for HTML output -------------------------------------------------
 
 html_theme = 'sphinx_rtd_theme'
@@ -94,10 +91,7 @@ html_css_files = [
     'css/custom.css',
 ]
 
-
 html_theme_options={'logo_only':True,'display_version':True}#,'style_nav_header_background':'#ff7b00'}
-
-
 
 # The following code as well as base.rst for linking to sourcecode from functions via edit on Github is inspired by https://github.com/readthedocs/readthedocs-sphinx-ext/issues/28
 
@@ -119,7 +113,6 @@ def get_obj_module(qualname):
         obj = None
 
     return obj, sys.modules[modname]
-
 
 def get_linenos(obj):
     """Get an object’s line numbers"""
@@ -159,8 +152,6 @@ intersphinx_mapping = dict(
     scanpy=('https://scanpy.readthedocs.io/en/stable/', None),
     python=('https://docs.python.org/3', None),
 )
-
-
 
 nbsphinx_prolog = """
 .. raw:: html

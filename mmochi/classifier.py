@@ -19,6 +19,13 @@ from . import utils
 from .logger import logg
 from . import thresholding
 
+# Silence numba deprecation warnings
+from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
+import warnings
+warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
+warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
+
+
 
 DEBUG_ERRORS = False
 
@@ -202,11 +209,12 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
              probability_cutoff: float=0,
              features_limit: Optional[Union[str, List[str], dict]]=None, 
              skip_to: Optional[str]=None, end_at: Optional[str]=None,
-             reference: Optional[str]=None) -> Tuple[anndata.AnnData, hierarchy.Hierarchy]:
+             reference: Optional[str]=None,
+             external_holdout: bool=False) -> Tuple[anndata.AnnData, hierarchy.Hierarchy]:
     """
     Classify subsets using the provided hierarchy. If the hierarchy has not yet been trained, this function trains the hierarchy and predicts cell types. If the hierarchy has been trained, this classifier will not retrain random forests unless explicitly asked to (retrain=True). Many classifier kwargs are defined in the hierarchy on a node-by-node basis. Please see mmc.Hierarchy() and mmc.add_classification() for additional details. 
     
-    Classifications information for every level are recorded in .obsm['lin']. [classification_layer]_class denotes the classified MMoCHi classification for each event. [classification_layer]_hc denotes the high-confidence thresholded categories for each event. [classification_layer]_hold_out denotes whether the event is part of explicit hold-out for that layer for each event. [classification_layer]_train is a boolean column indicating whether the event was used in training (noise events can be neither hold_out nor _train). [classification_layer]_traincounts denotes the number of times an event was used in training (amplified events can have _traincounts >1). If SMOTE or its variations are used to balnce training data, traincounts will refer to rebalanced training counts and will not account for generated training events. [classification_layer]_probability indicates the confidence of the classifier at the specified layer for each event.
+    Classifications information for every level are recorded in .obsm['lin']. [classification_layer]_class denotes the classified MMoCHi classification for each event. [classification_layer]_hc denotes the high-confidence thresholded categories for each event. [classification_layer]_holdout denotes whether the event is part of explicit hold-out for that layer for each event. [classification_layer]_train is a boolean column indicating whether the event was used in training (noise events can be neither holdout nor _train). [classification_layer]_traincounts denotes the number of times an event was used in training (amplified events can have _traincounts >1). If SMOTE or its variations are used to balnce training data, traincounts will refer to rebalanced training counts and will not account for generated training events. [classification_layer]_probability indicates the confidence of the classifier at the specified layer for each event.
     
     Note: Only [classification_layer]_hc and [classification_layer]_class layers are created for cutoff layers
     
@@ -267,11 +275,12 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         skip_to is defined, it replaces only the columns that occur at and beyond that level.
     reference
         Column in the adata.obs to be used for comparing (in the log file) the results of high-confidence thresholding to predetermined annotations or clusters
-        
+    external_holdout
+        Whether to omit events that are True in adata.obsm[key_added]['external_holdout'] from training, calibration, and hyperparameter optimization, these events will have high confidence thresholds applied along and will be classified by applying the final model for each layer of the classifier. External hold out can be defined using mmc.define_external_holdout()
     Returns
     -------
     adata: AnnData object
-        Object containing a .obsm[key_added] containing columns corresponding to the classification high-confidence ("_hc"), the held out data not used for testing ("_hold_out"), the prediction ("_class") for each level. If probababilities_suffix is defined, also contains "_probabilities" keys in the .uns corresponding to the prediction probabilities of each class for each event.
+        Object containing a .obsm[key_added] containing columns corresponding to the classification high-confidence ("_hc"), the held out data not used for testing ("_holdout"), the prediction ("_class") for each level. If probababilities_suffix is defined, also contains "_probabilities" keys in the .uns corresponding to the prediction probabilities of each class for each event.
     Hierarchy: Hierarchy object
         A trained hierarchy with classifiers built into it and a record of thresholds and other settings used. 
     """
@@ -286,8 +295,12 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     logg.print(f"Set up complete.\nUsing {len(features_used_X)} features")
     classifications = hierarchy.get_classifications()
     if skip_to is None:
+        if external_holdout:
+            ext = adata.obsm[key_added]['external_holdout']
         adata.obsm[key_added] = pd.DataFrame(index=adata.obs.index)
         adata.obsm[key_added]['All_class'] = 'All'
+        if external_holdout:
+            adata.obsm[key_added]['external_holdout'] = ext
     else:
         assert skip_to in classifications, 'Attempting to skip to an invalid classification level'
         classifications = classifications[classifications.index(skip_to):]
@@ -295,9 +308,12 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         assert gparent+"_class" in adata.obsm[key_added].columns, 'Attempting to skip to a level beneath an unclassified level'
         logg.warning(f'Skipped to classification on {skip_to}')
         for classification in classifications:
-            adata.obsm[key_added].drop([classification+"_class",classification+"_hc",classification+"_hold_out",
+            adata.obsm[key_added].drop([classification+"_class",classification+"_hc",classification+"_holdout",
                                         classification+"_probability",classification+"_train",classification+"_traincounts"],
                                         axis=1, inplace=True, errors='ignore')
+            if hierarchy.get_info(classification,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
+                adata.obsm[key_added].drop(classification+"_opt_holdout",axis=1, inplace=True, errors='ignore')
+                
     if not end_at is None:
         classifications = classifications[:classifications.index(end_at)+1]     
     total_adata, total_X = adata, X  
@@ -305,19 +321,28 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     total_adata.obs_names = range(0,len(total_adata))    
     total_adata.obs_names = total_adata.obs_names.astype(str)
     
+    if external_holdout:
+        try:
+             external_holdout_mask = adata.obsm[key_added]['external_holdout'].values.flatten()
+        except:
+            assert False, f'Did not create external hold out in adata.obsm[{key_added}]'
+    else:
+        external_holdout_mask = pd.DataFrame([False] * len(total_adata)).values.flatten()
+            
     batch_masks, batches = utils.batch_iterator(adata,batch_key)
+
     if weight_integration:
-        weights = list(np.array([sum(b)/len(b) for b in batch_masks]))
+        weights = list(np.array([sum(b[~external_holdout_mask])/len(b[~external_holdout_mask]) for b in batch_masks]))
     else:
         weights =  [1/len(batches)] * len(batches)
     logg.info(f'Using weights of: {weights} for random forest n_estimators')
-    for level in classifications:
+    for level in classifications:   
         try:
             parent,gparent = hierarchy.classification_parents(level)
             assert gparent+"_class" in total_adata.obsm[key_added].columns, f"Cannot subset on {parent} to train {level} as {gparent} has not been classified"
             subset_mask = total_adata.obsm[key_added][gparent+'_class'] == parent
             assert sum(subset_mask) > 0, f"No events were classified as {parent} in {gparent}_class"
-            subset_adata, subset_X = total_adata[subset_mask],total_X[subset_mask.values] 
+            subset_adata, subset_X = total_adata[subset_mask & ~external_holdout_mask],total_X[subset_mask.values & ~external_holdout_mask]
             features_used = features_used_X
             logg.print("Data subsetted on "+ parent+' in '+ gparent) 
             
@@ -325,7 +350,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                 logg.print(f'Running high-confidence populations for {level}...')         
                 hc_dfs, hc_batches = [], []
                 for batch_mask, batch in zip(batch_masks, batches):
-                    adata = subset_adata[batch_mask[subset_mask]]
+                    adata = subset_adata[batch_mask[subset_mask & ~external_holdout_mask]]
                     if not batch_key is None:
                         logg.info(f'Running high-confidence thresholds in {batch}')
                     if len(adata) > 0:
@@ -384,23 +409,24 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                                     vals = df[level+'_hc'].value_counts()
                                     if not subset in vals.index or (vals.loc[subset] < min_events):
                                         if not subset in vals.index:
-                                            events_needed = min(min_events, sum((hc_df[level+'_hc']==subset) & ~hc_df.index.isin(hc_barcodes_batch))-1) 
+                                            events_needed = int(min(min_events, sum((hc_df[level+'_hc']==subset) & ~hc_df.index.isin(hc_barcodes_batch))-1))
                                         else:
                                             events_needed = min(min_events - vals.loc[subset],sum((hc_df[level+'_hc']==subset) & \
                                                                                                   ~hc_df.index.isin(hc_barcodes_batch))-1) 
-                                            events_needed = max(events_needed,0)
+                                            events_needed = int(max(events_needed,0))
                                         if allow_spike_ins:
                                             logg.info(f'Spiking in {events_needed} of {subset} in {batch} to reach {min_events} events')
+                                            
                                             spike_in_barcode_batch = random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
-                                                                                          ~hc_df.index.isin(hc_barcodes_batch)].index), events_needed)
+                                                                                          ~hc_df.index.isin(hc_barcodes_batch)].index), int(events_needed))
                                             spike_in_barcodes += spike_in_barcode_batch
                                             hc_barcodes_batch += spike_in_barcode_batch
                                             
                                         else:
                                             assert False, f"{batch_key} of {batch} is missing subset {subset}. Cannot train without spike ins."
                                     if subset in force_spike_ins:
-                                        events_needed = min(vals.loc[subset]*len(batches),sum((hc_df[level+'_hc']==subset) & \
-                                                                                              ~hc_df.index.isin(hc_barcodes_batch))-1)
+                                        events_needed = int(min(vals.loc[subset]*len(batches),sum((hc_df[level+'_hc']==subset) & \
+                                                                                              ~hc_df.index.isin(hc_barcodes_batch))-1))
                                         events_needed = max(events_needed,0)
                                         logg.info(f'Spiking in {events_needed} of {subset} in {batch} as required by force_spike_ins)')
                                         spike_in_barcode_batch = random.sample(list(hc_df[(hc_df[level+'_hc']==subset) & \
@@ -413,6 +439,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     if enforce_holdout: # or hierarchy.get_info(level,'calibrate'):
                         hc_df = original_hc_df
                         
+
                     in_danger_noise_checker, max_training, clf_kwargs, class_weight, f_limit = \
                     hierarchy.get_info(level,['in_danger_noise_checker', 
                                               'max_training','clf_kwargs','class_weight', 'features_limit'])
@@ -438,6 +465,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     clf.n_estimators = 0
                     dfs = []
                     train_dfs = []
+                    hyperparameter_X_y = []
                     for hc_barcodes_batch, batch, weight in zip(hc_barcodes_batches, hc_batches,weights):
                         clf.n_estimators += int(np.ceil(n_estimators * weight))
                         logg.info(f'Training {int(np.ceil(n_estimators * weight))} new estimators using {batch}...')
@@ -448,20 +476,119 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         train_dfs.append(pd.DataFrame.from_dict(dict(zip(df.index,traincounts)), orient="index", columns=["training"]))
                         clf.fit(X, y)
                         dfs.append(df)
-                        del X, y
+                        if hierarchy.get_info(level,'optimize_hyperparameters'):
+                            hyperparameter_X_y.append((X, y))
+                        else: 
+                            del X, y
+                    
                     hierarchy.set_clf(level,clf,features_used)
-                    df = pd.concat(dfs)
+                    df = pd.concat(dfs)       
+                    if hierarchy.get_info(level,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
+                        holdout = df[(df[level + '_hc'] != '?') & (df[level + '_holdout'] == True)].index
+                        holdout_mask = np.random.choice([False,True], len(holdout))
+                        opt_holdout_idx = holdout[~holdout_mask]
+                        holdout_idx = holdout[holdout_mask]
+                        unknown_idx = df[df[level + '_hc'] == '?'].index
+                        df[level + '_opt_holdout'] = df[level + '_holdout']
+                        df.loc[unknown_idx,level + '_opt_holdout'] = False
+                        df.loc[holdout_idx,level + '_opt_holdout'] = False
+                        df.loc[opt_holdout_idx,level + '_holdout'] = False
+                        if df.loc[opt_holdout_idx,level + '_hc'].value_counts().min() < max((min_events * 0.5), 5):
+                            logg.warn(f'Optimize holdout contains too few events in some classes, which may make hyperparameter optimization or calibration unstable.')
+                            logg.warn(df.loc[opt_holdout_idx,level + '_hc'].value_counts())
+                            
+                        
                     
                     lost_items = hc_df[~hc_df.index.isin(df.index)].copy()
-                    lost_items[level+'_hold_out'] = True
+                    lost_items[level+'_holdout'] = True
                     lost_items[level+'_traincounts'] = 0
                     lost_items[level+'_train'] = False
+                    
                     df = pd.concat([df,lost_items])
                     
                     df.reset_index(inplace=True)
-                    
+                    df[level + '_holdout'] = df[level + '_holdout'].fillna(False)
+                    if hierarchy.get_info(level,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
+                        df[level + '_opt_holdout'] = df[level + '_opt_holdout'].fillna(False)
                     df = df.groupby(['index',level+'_hc']).sum()
-                    df.reset_index(level=1,inplace=True)
+                    df.reset_index(level=1,inplace=True)   
+                    
+                    if hierarchy.get_info(level,'optimize_hyperparameters'): 
+                        logg.print(f'Optimizing hyperparameters for {level}...')
+                        hyperparameters = hierarchy.get_info(level,'hyperparameters') #dict of hyperparameter:values
+                        hyperparameter_order = hierarchy.get_info(level,'hyperparameter_order')
+                        assert set(hyperparameter_order) == set(hyperparameters.keys()), "hyperparameter_order must contain all keys in hyperparameters and only those keys"
+                        
+                        clf_kwargs['verbose'] = False
+                        opt_holdout_mask = (df[level + '_opt_holdout'] == True)
+                        subset_X_barcodes = df[(df[level + '_opt_holdout'] == True)].index.astype(int) #df gets ordered by batches above
+                        sample_weights = sklearn.utils.class_weight.compute_sample_weight(class_weight,df[opt_holdout_mask][level + '_hc'], indices=None)
+                        labels = clf.predict(total_X[subset_X_barcodes])
+                        score = sklearn.metrics.balanced_accuracy_score(df[opt_holdout_mask][level + '_hc'], labels, sample_weight=sample_weights)
+                        best_clf = (score, clf, clf_kwargs.copy())
+                      
+                    
+                    
+                        min_improvement = hierarchy.get_info(level,'hyperparameter_min_improvement')
+                        optimization_cap = hierarchy.get_info(level,'hyperparameter_optimization_cap')
+                        if optimization_cap is None or isinstance(optimization_cap, float) or isinstance(optimization_cap, int):
+                            optimization_cap = {i:optimization_cap for i in hyperparameters}
+                        if min_improvement is None or isinstance(min_improvement, float) or isinstance(min_improvement, int):
+                            min_improvement = {i:min_improvement for i in hyperparameters}
+                            
+                        for param in hyperparameter_order:
+                            if param not in clf_kwargs.keys():
+                                clf_kwargs[param] = clf.__dict__[param]
+                                
+                            if param not in min_improvement:
+                                min_improvement[param] = None
+                            opt_cap = optimization_cap[param]
+                            if opt_cap is None:
+                                opt_cap = 1.0
+                                
+                            if param not in min_improvement:
+                                min_improvement[param] = None  
+                            min_improve = min_improvement[param]
+                            if min_improve is None:
+                                min_improve = -1.0
+                            logg.print(f'Using optimization cap of {opt_cap} and min_improvement of {min_improve} for {param}')
+                        
+                            if best_clf[0] >= opt_cap:
+                                logg.print(f'Optimization cap reached for level {level}, skipping param {param} and beyond')
+                                break
+                                
+                            best_clf = (0.0, best_clf[1],best_clf[2])
+                            
+                            hyper_clf_kwargs = best_clf[2].copy()
+                            for val in hyperparameters[param]: 
+                                logg.debug(f'Checking hyperparameters {param} for values of {val}')
+                                hyper_clf_kwargs[param] = val
+                                clf = sklearn.ensemble.RandomForestClassifier(class_weight=class_weight,
+                                                                      warm_start=(not batch_key is None),**hyper_clf_kwargs)
+                                n_estimators = clf.n_estimators
+                                clf.n_estimators = 0
+                                for pair, weight in zip(hyperparameter_X_y,weights):
+                                    clf.n_estimators += int(np.ceil(n_estimators * weight))
+                                    
+                                    clf.fit(pair[0], pair[1])
+                                
+                                labels = clf.predict(total_X[subset_X_barcodes])
+                                score = sklearn.metrics.balanced_accuracy_score(df[opt_holdout_mask][level + '_hc'], labels, sample_weight=sample_weights)
+                                logg.print(f'Score for {param}: {val} = {score}')
+                                
+                                if score - best_clf[0] < min_improve: #if no real improvement for increasing n_estimators, stop
+                                    logg.debug(f'Best parameter for {param} was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
+                                    break
+                                if score > best_clf[0]:
+                                    best_clf = (score, clf, hyper_clf_kwargs.copy())
+                            logg.print(f'Best parameter for {param} was {best_clf[2][param]} with an accuracy score of {best_clf[0]}')
+                        clf = best_clf[1]
+                        clf_kwargs = best_clf[2].copy()
+                        clf_kwargs['verbose'] = True
+                        logg.print(f'Best hyperparameters selected for level {level} as {clf_kwargs} with an balanced accuracy of {best_clf[0]}')
+                        del hyperparameter_X_y #note you may have to delete them individually
+                        gc.collect()             
+                                      
                     
                     train_dfs.append(pd.DataFrame(0,index=lost_items.index,columns=[level+'_training']))
                     train_df = pd.concat(train_dfs)
@@ -469,34 +596,35 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     train_df = train_df.groupby(['index']).sum()
                     df[level+'_traincounts'] = train_df['training'].astype(int)
                     df[level+'_train'] = train_df['training'].astype(bool)
-                    del train_df                
-                    df[level+'_hold_out'] = (df[level+'_hold_out']) #& (df[level+'_hc'] != '?')
+                    # if level + ''
+                    df[level+'_holdout'] = (df[level+'_holdout']) #& (df[level+'_hc'] != '?')
+                    if hierarchy.get_info(level,'calibrate'):
+                        df[level+'_opt_holdout'] = (df[level+'_opt_holdout'])
 
                 logg.print(f"Merging data into adata.obsm['{key_added}']")
-                
                 total_adata.obsm[key_added] = total_adata.obsm[key_added].merge(df,how='left',left_index=True,
-                                          right_index=True,suffixes=['_error',None]) 
+                                          right_index=True,suffixes=['_error',None])
+                
                 
                 #spike ins might be holdout in one batch and trained with in another
                 if not hierarchy.get_info(level,'is_cutoff') and not batch_key is None and len(spike_in_barcodes) > 0:
-                    total_adata.obsm[key_added].loc[list(set(spike_in_barcodes)),level+'_hold_out'] = 0.0
+                    total_adata.obsm[key_added].loc[list(set(spike_in_barcodes)),level+'_holdout'] = 0.0
+                    total_adata.obsm[key_added].loc[list(set(spike_in_barcodes)),level+'_opt_holdout'] = 0.0
                 
                 if not hierarchy.get_info(level,'is_cutoff'):
                     if hierarchy.get_info(level,'calibrate'):
-                        logg.print(f'Running calibration on random forest')
                         
-                        train_mask = total_adata[subset_mask].obsm[key_added][level+'_train'].astype(bool).values
-                        hc_mask = (total_adata[subset_mask].obsm[key_added][level+'_hc'] != '?').values
-                        third_mask = np.random.choice([True,False,False],len(hc_mask))
-                        calibration_mask = ~train_mask & hc_mask & third_mask
-                        # calibration_mask = train_mask
-                        # if calibration_mask doesn't include all
-                        y_calibration = total_adata[subset_mask].obsm[key_added][level+'_hc'][calibration_mask]
-                        if ((sum(calibration_mask) < 1000) or 
-                           (not set(y_calibration.values) == (set(total_adata[subset_mask].obsm[key_added][level+'_hc'].values) - {'?'}))):
+                        logg.print(f'Running calibration on random forest')
+                        train_mask = total_adata[subset_mask & ~external_holdout_mask].obsm[key_added][level+'_train'].astype(bool).values
+                        hc_mask = (total_adata[subset_mask & ~external_holdout_mask].obsm[key_added][level+'_hc'] != '?').values
+                        opt_holdout_mask = total_adata[subset_mask & ~external_holdout_mask].obsm[key_added][level+'_opt_holdout'] == 1       
+                        calibration_mask = ~train_mask & hc_mask & opt_holdout_mask
+                        y_calibration = total_adata[subset_mask & ~external_holdout_mask].obsm[key_added][level+'_hc'][calibration_mask]
+                        if ((sum(calibration_mask) < 300) or 
+                       (not set(y_calibration.values) == (set(total_adata[subset_mask & ~external_holdout_mask].obsm[key_added][level+'_hc'].values) - {'?'}))):
                             calibration_mask = ~train_mask & hc_mask
-                            y_calibration = total_adata[subset_mask].obsm[key_added][level+'_hc'][calibration_mask]
-                            logg.info(f'Calibration will not include the 1/3rd mask')
+                            y_calibration = total_adata[subset_mask & ~external_holdout_mask].obsm[key_added][level+'_hc'][calibration_mask]
+                            logg.info(f'Calibration will not include separate _opt_holdout')
                         y_calibration = y_calibration.values
                         # if len(y_calibration)>1000:
                         #     cal_method = 'isotonic'
@@ -506,11 +634,36 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         logg.info(f'Calibrating with method {cal_method}')
                         cal_clf = CalibratedClassifierCV(clf, method=cal_method, cv="prefit") # isotonic should perform better with imbalanced classes.
                         X_calibration = subset_X[calibration_mask]
-                        
                         cal_clf.fit(X_calibration, y_calibration)
                         hierarchy.set_clf(level,cal_clf,features_used)
+                
+                if external_holdout:
+                    if hierarchy.get_info(level,'is_cutoff'):
+                        adata = total_adata[subset_mask]
+                        df = hc_threshold(adata,hierarchy,level,data_key)
+                        df[level+'_class'] = df[level+'_hc']
+                        df.loc[df[level+'_class'] == '?',level+'_class'] = np.nan
+
+                        total_adata.obsm[key_added][level+'_class'] = total_adata.obsm[key_added][level+'_class'].combine_first(df[level+'_class']) 
+                        total_adata.obsm[key_added][level+'_hc'] = total_adata.obsm[key_added][level+'_hc'].combine_first(df[level+'_hc']) 
+                    else:
+                        adata = total_adata[subset_mask & external_holdout_mask]
+                        df = hc_threshold(adata,hierarchy,level,data_key)
+                        df[level + '_holdout'] = 0 
+                        df[level + '_opt_holdout'] = 0 
+                        df[level + '_traincounts'] = 0
+                        df[level + '_train'] = False
                         
-            if not hierarchy.get_info(level,'is_cutoff'):
+                        total_adata.obsm[key_added][level+'_hc'] = total_adata.obsm[key_added][level+'_hc'].combine_first(df[level+'_hc']) 
+                        total_adata.obsm[key_added][level+'_holdout'] = total_adata.obsm[key_added][level+'_holdout'].combine_first(df[level+'_holdout']) 
+                        if hierarchy.get_info(level,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
+                            total_adata.obsm[key_added][level+'_opt_holdout'] = total_adata.obsm[key_added][level+'_opt_holdout'].combine_first(df[level+'_opt_holdout']) 
+                        total_adata.obsm[key_added][level+'_traincounts'] = total_adata.obsm[key_added][level+'_traincounts'].combine_first(df[level+'_traincounts']) 
+                        total_adata.obsm[key_added][level+'_train'] = total_adata.obsm[key_added][level+'_train'].combine_first(df[level+'_train']) 
+                         
+                    subset_adata, subset_X = total_adata[subset_mask],total_X[subset_mask.values]
+                
+            if not hierarchy.get_info(level,'is_cutoff'): #apply clasification to all data at this node (including hold out)
                 df = pd.DataFrame(index=subset_adata.obs_names)
 
                 logg.print(f'Predicting for {level}...')
@@ -550,11 +703,16 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         total_adata.obsm[key_added][cols[cols.str.endswith('_hc')]] = \
         total_adata.obsm[key_added][cols[cols.str.endswith('_hc')]].astype(str).astype('category')
 
-        total_adata.obsm[key_added].loc[:,cols.str.endswith('_hold_out')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.endswith('_hold_out')].fillna(False)
-        total_adata.obsm[key_added][cols[cols.str.endswith('_hold_out')]] = \
-        total_adata.obsm[key_added][cols[cols.str.endswith('_hold_out')]].astype(bool)
-
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_holdout')] = \
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_holdout')].fillna(False)
+        total_adata.obsm[key_added][cols[cols.str.endswith('_holdout')]] = \
+        total_adata.obsm[key_added][cols[cols.str.endswith('_holdout')]].astype(bool)
+        
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_opt_holdout')] = \
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_opt_holdout')].fillna(False)
+        total_adata.obsm[key_added][cols[cols.str.endswith('_opt_holdout')]] = \
+        total_adata.obsm[key_added][cols[cols.str.endswith('_opt_holdout')]].astype(bool)
+        
         total_adata.obsm[key_added].loc[:,cols.str.endswith('_train')] = \
         total_adata.obsm[key_added].loc[:,cols.str.endswith('_train')].fillna(False)
         total_adata.obsm[key_added][cols[cols.str.endswith('_train')]] = \
@@ -757,13 +915,13 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
     logg.print('Choosing training data...') # Randomly select high-confidence dataset for training purposes...80% train, 20% held out
     # creating an array to later fill with traincounts by applying masks in reverse order of y subsetting
     traincounts_final = np.zeros(len(templin))
-    templin[level+'_hold_out'] = True
+    templin[level+'_holdout'] = True
     mask = np.random.choice([False,False,False,False,True],size=sum(templin[level+'_hc'] != '?'))
-    templin.loc[templin[level+'_hc'] != '?',level+'_hold_out'] = mask
+    templin.loc[templin[level+'_hc'] != '?',level+'_holdout'] = mask
     logg.debug(f"Number of events {len(templin)}")
     logg.debug(f"X.shape: {X.shape}")
-    X = X[~templin[level+"_hold_out"].to_numpy()]
-    y = templin[~templin[level+'_hold_out']][level+'_hc'].values
+    X = X[~templin[level+"_holdout"].to_numpy()]
+    y = templin[~templin[level+'_holdout']][level+'_hc'].values
     traincounts_mid = np.zeros(len(y))
     idx_remove_list=[]
     n_idxs = np.array(range(0,len(y)))
@@ -787,7 +945,7 @@ def _get_train_data(X: sp.csr_matrix, templin: pd.DataFrame,
     logg.print('Resampling...')
     X,y, tcounts = _balance_training_classes(X,y,features_used, resample_method,max_training=max_training,in_danger_noise_checker=in_danger_noise_checker) 
     traincounts_mid[~idxs_remove_mask] = tcounts
-    traincounts_final[~templin[level+'_hold_out']] = traincounts_mid 
+    traincounts_final[~templin[level+'_holdout']] = traincounts_mid 
     logg.debug(f'Selected for training: {len(y)}, with {np.unique(y, return_counts=True)}')
     logg.print(f"Training with {len(y)} events after {resample_method} resampling...")
     assert len(set(y)) > 1, 'Must have more than 1 class to classify...'
@@ -1260,4 +1418,47 @@ def identify_group_markers(adata: anndata.AnnData, group1: Union[str, Iterable[s
     
     if return_df:
         return df
+    return
+
+def define_external_holdout(adata: anndata.AnnData, key_added: str='lin',
+                             holdout_mask: Optional[List[bool]] = None, holdout_fraction: Union[float, int]=0.2,
+                            overwrite: bool=False):
+    '''
+    Creates column in .obsm[key_added] with randomly selected holdout for benchmarking its performance against other tools.
+    To ensure this data is held out from thresholding and classification, pass external_holdout=True to both functions. 
+    To perform peak detection with this data excluded, invert this mask and pass it to inclusion_mask in landmark_register_adts or update_landmark_register
+    
+    Note: By default if external holdout already exists, this function will not overwrite the current holdout column
+    
+    Parameters
+    ----------
+    adata
+        AnnData object containing events to set aside for hold out
+    key_added
+        Will add external_holdout column to .obsm[key_added] if it exists and will also create .obsm[key_added] dataframe if it does not  
+    holdout_fraction
+        Either a proportion (if less than or equal to 1) or number (if greater than 1) of events to set aside for external hold out
+    overwrite
+        Whether to replace old external hold out column if one exists
+
+    '''
+    if holdout_mask is not None:
+        assert len(holdout_mask) == len(adata), 'Mask must have same length as adata'
+        holdout = holdout_mask
+    else:
+        if holdout_fraction <= 1:
+            holdout_n = int(len(adata) * holdout_fraction)
+        else:
+            holdout_n = int(holdout_fraction)
+        holdout = np.full(len(adata), False)
+        holdout[:holdout_n] = True
+        np.random.shuffle(holdout)
+    try:
+        if 'external_holdout' not in adata.obsm[key_added].columns or overwrite:
+            adata.obsm[key_added]['external_holdout'] = holdout
+        else:
+            logg.warn("External hold out column already exists, not replacing it")
+    except:
+        adata.obsm[key_added] = pd.DataFrame(index=adata.obs.index)
+        adata.obsm[key_added]['external_holdout'] = holdout
     return

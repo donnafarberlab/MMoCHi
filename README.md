@@ -31,6 +31,7 @@ Daniel P. Caron, William L. Specht, David Chen, Steven B. Wells, Peter A. Szabo,
 - **[High-Confidence Thresholding](./docs/High_Confidence_Thresholding.ipynb)** - Careful thresholding to improve high-confidence selection and training!
 - **[Exploring Feature Importances](./docs/Exploring_Feature_Importances.ipynb)** - Interpreting random forests: What features are most useful for classification?
 - **[Pretrained Classification](./docs/Pretrained_Classification.ipynb)** - Applying a pretrained classifier to other datasets.
+- **[Hyperparameter Optimization](./docs/Hyperparameter_Optimization.ipynb)** - Automatic hyperparameter optimization of the underlying random forests.
 
 # Installation Instructions
 
