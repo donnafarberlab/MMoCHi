@@ -16,6 +16,18 @@ pip install .
 ---
 ## Current version
 
+### [0.3.1] - 26JAN24
+
+#### Added
+
+- Added community-submitted hierarchy for γδ T cells [[#2]](https://github.com/donnafarberlab/MMoCHi/issues/2#issue-2098955522)
+
+#### Changed
+
+- Improved [Hyperparameter Optimization](Hyperparameter_Optimization.ipynb) tutorial.
+
+- Reorganized [Example Hierarchies](Example_Hierarchies.md) page
+ 
 ### [0.3.0] - 23JAN24
 
 #### Added
@@ -28,7 +40,7 @@ pip install .
 
 - Added `mmc.Hierachy.get_clf_kwarfs` and `mmc.Hierachy.get_optimal_clf_kwargs` functions to display default random forest classifier kwargs and ones selected by hyperparameter optimization (after `mmc.classify` has been run) respectively
 
-- Added a [page to documentation](Landmark_Registration_Advice.md) for sharing default `marker_bandwdith` values for various antibodies and included more examples to the [Example Hierarchies]Example_Hierarchies.md) page.
+- Added a [page to documentation](Landmark_Registration_Advice.md) for sharing default `marker_bandwidth` values for various antibodies and included more examples to the [Example Hierarchies](Example_Hierarchies.md) page.
 
 - Optional `inclusion_mask` can be passed to landmark registration so peaks can be detected on only a subset of events, but the warping can still be applied to all events
 
