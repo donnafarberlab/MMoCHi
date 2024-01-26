@@ -4,6 +4,8 @@ A lot of care goes into designing MMoCHi hierarchies. Since our hierarchies and 
 
 We hope to continually update this page with new hierarchies that we or members of the community use! Details on how to submit your hierarchy to this list can be found [below](#submitting-a-mmochi-hierarchy).
 
+## Tables
+
 <b><a href="#from-mmochi-manuscript">Example Hierarchies from MMoCHi Manuscript</a></b>
 
 These MMoCHi hierarchies were used for analyses in the original MMoCHi manuscript. We have included them here for insipration and so that users can more easily replicate our analyses.
@@ -17,7 +19,7 @@ These MMoCHi hierarchies were used for analyses in the original MMoCHi manuscrip
 | <a href="#xenium-of-human-lymph-node-v1">10x Xenium of human lymph node</a>  | Classifier for immune and structural cell types in a human lymph node using spatial information | 10x Xenium (Spatial) | *Homo sapiens* | Daniel P. Caron | N/A | [(10x Genomics)](https://www.10xgenomics.com/datasets)<br>[[Human Lymph Node Preview]](https://www.10xgenomics.com/datasets/human-lymph-node-preview-data-xenium-human-multi-tissue-and-cancer-panel-1-standard) | 23JAN24
 
 <b><a href="#community-submitted">Community Submitted Hierarchies</a></b>
----
+
 We welcome community members to submit the hierarchies they use to aid others as they design hierarchies for their own datasets. See details [below](#submitting-a-mmochi-hierarchy).
 
 | Name | Short Description | Modalities | Species | Author(s) | Publication | Training Data | Date Posted
@@ -26,7 +28,7 @@ We welcome community members to submit the hierarchies they use to aid others as
 | <a href="#extended-human-immune-subsets-v1">Extended human immune subsets</a>  | Classifier for 34 human immune subsets across tissue sites | CITE-seq | *Homo sapiens* | Daniel P. Caron & Steven B. Wells | [(Wells et al., bioRxiv, 2024)](https://doi.org/10.1101/2024.01.03.573877) | N/A | 26JAN24
 
 <b><a href="#prior-versions">Prior Versions of Hierarchies</a></b>
----
+
 Old versions of submitted hierarchies will be saved here.
 
 | Name | Short Description | Modalities | Species | Author(s) | Publication | Training Data | Date Posted
@@ -500,3 +502,5 @@ h.add_subset('nk_ilc_precursor','nk_ilc_subsets', dict(any_of=['SELL_gex','CD62L
 ```
 
 ## Prior Versions
+
+[Placeholder]
