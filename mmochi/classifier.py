@@ -30,7 +30,7 @@ warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 DEBUG_ERRORS = False
 
 def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
-                     data_key: Optional[str]=utils.DATA_KEY, reduce_features_min_cells: int=0, 
+                     data_key: Optional[Union[str,list]]=utils.DATA_KEY, reduce_features_min_cells: int=0, 
                      features_limit=None) -> Tuple[sp.csr_matrix, list]:
     """
     Setup that can optionally be completed before running mmc.classify. This can be run before the classifier (to reduce runtime of the classifier function in a parameter optimization loop) or is automatically run when training a classifier. It concatenates the .X and any data_key in the .obsm, then performs feature reduction (if reduce_features_min_cells > 0). Next, features can be limited by an external feature set. Then, it sorts the resulting feature_names (the columns from the .X and .obsm[data_key]) and csr.matrix, alphabetically, to make the feature order reproducible across runs. If defined, feature limits can be performed so that you can match the expected features of the hierarchy.
@@ -40,7 +40,7 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
     adata
         Object containing gene expression data, and expression data for modalities for every data key in `.obsm`
     x_modalities
-        Name of the modality of the data in the .X of adata
+        Name of the modality of the data in the .X of adata, or name to use for all of .X, if None assumes 'gex'.
     data_key
         Key in adata.obsm to concatenate into .X and to reduce features across
     reduce_features_min_cells
@@ -57,20 +57,34 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
         List of features that were checked/used in the reduction process 
     """
     logg.print('Setting up...')
-    if type(x_modalities) is str and x_modalities in adata.var.columns:
-        x_modalities = adata.var[x_modalities]
+    if (type(x_modalities) is str and x_modalities in adata.var.columns):
+        utils.MODALITY_COLUMN = x_modalities
+        x_modalities = adata.var[utils.MODALITY_COLUMN].astype(str)
+    elif x_modalities is None and utils.MODALITY_COLUMN in adata.var.columns:
+        x_modalities = adata.var[utils.MODALITY_COLUMN].astype(str)
+    elif x_modalities is None:
+        logg.warn('No provided modality name, defaulting to gex for all of .X')
+        x_modalities = 'gex'
+        
     if data_key is None:
         logg.print('Using .X only')
         X = sp.csr_matrix(adata.X)
         utils._validate_names(adata.var_names) 
         features_used = list(adata.var_names+"_mod_"+x_modalities)
     else:
-        logg.print('Using .X and '+str(data_key))
+        if not isinstance(data_key,list):
+            data_key = [data_key]
+        obsm_key = set(adata.obsm.keys()).intersection(set(data_key))
+        assert len(obsm_key) > 0, f'No keys [{data_key}] in .obsm'
+        if len(obsm_key) > 1:
+            logg.warn(f'Multiple data_keys in .obsm [{obsm_key}], defaulting to {list(obsm_key)[0]}')
+        obsm_key = list(obsm_key)[0]
+        logg.print('Using .X and '+str(obsm_key))
         X = sp.csr_matrix(adata.X)
-        X = sp.hstack([X,sp.csr_matrix(adata.obsm[data_key])],format='csr')
+        X = sp.hstack([X,sp.csr_matrix(adata.obsm[obsm_key])],format='csr')
         utils._validate_names(adata.var_names) 
-        utils._validate_names(adata.obsm[data_key].columns) 
-        features_used = list(adata.var_names+"_mod_"+x_modalities) + list(adata.obsm[data_key].columns+"_mod_"+data_key)
+        utils._validate_names(adata.obsm[obsm_key].columns) 
+        features_used = list(adata.var_names+"_mod_"+x_modalities) + list(adata.obsm[obsm_key].columns+"_mod_"+obsm_key)
     
     
     assert len(features_used) == len(set(features_used)), 'All feature names must be unique...'
@@ -79,8 +93,8 @@ def classifier_setup(adata: anndata.AnnData, x_modalities: Union[str,List[str]],
         logg.warn(f"Limiting .X features using {features_limit} column in adata.var...")
         features_limit = adata.var_names[adata.var[features_limit]] +"_mod_"+ x_modalities
         features_limit = _limit_features_list_to_dict(features_limit)
-        if not data_key is None:
-            features_limit[data_key] = 'All'
+        if not obsm_key is None:
+            features_limit[obsm_key] = 'All'
             
     X, features_used = _reduce_features(X,features_used, min_cells=reduce_features_min_cells)
     X, features_used = _limit_and_realign_features(X, features_used, features_limit)
@@ -198,8 +212,8 @@ def _reduce_features(X: sp.csr_matrix, feature_names: List[str],
 
 
 def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy, 
-             key_added: str='lin', data_key: Optional[str]=utils.DATA_KEY,
-             x_data_key: Optional[str]=None, x_modalities: str='GEX',
+             key_added: str='lin', data_key: Optional[Union[str,list]]=utils.DATA_KEY,
+             x_data_key: Optional[Union[str,list]]=None, x_modalities: Optional[str]=None,
              batch_key: Optional[str]=utils.BATCH_KEY, retrain: bool=False,
              plot_thresholds: bool=False, reduce_features_min_cells: int=25,
              allow_spike_ins: bool=True, enforce_holdout: bool=True, 
@@ -231,11 +245,11 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     key_added
         Key in adata.obsm to store the resulting DataFrame of the classifier's results
     data_key
-        Key in adata.obsm to be used for high-confidence thresholding.
+        Key(s) in adata.obsm or .var[utils.MODALITY_COLUMN] to be used for high-confidence thresholding.
     x_data_key
-        Key in adata.obsm used for predictions, if undefined, defaults to data_key
+         Key(s) in adata.obsm or .var[utils.MODALITY_COLUMN] to be used, if undefined, defaults to data_key
     x_modalities
-        Column in adata.var (if x_modalities is in adata.var.columns), or name of the modality of the data in the .X
+        Column in adata.var to find modality labels, or name of the modality of the data in the .X, if None defaults to 'gex'
     batch_key
         Name of a column in adata.obs that corresponds to a batch for use in the classifier   
     retrain
@@ -785,7 +799,7 @@ def _predict_probabilities_cutoff(X: sp.csr_matrix, clf,
     return full_probabilities, probabilities, predictions
 
 def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
-                 level: str, data_key: Optional[str]=utils.DATA_KEY, 
+                 level: str, data_key: Optional[Union[str,list]]=utils.DATA_KEY, 
                  plot: bool=False, reference: Optional[str]=None,
                  batch: Optional[str]=None, log_reference: bool=True) -> pd.DataFrame:
     """
@@ -796,13 +810,13 @@ def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
     Parameters
     ----------
     adata:
-        Object containing gene expression data, and expression data for modalities for every data key in .obsm
+        Object containing gene expression data, and expression data for modalities for every data key in .obsm and .var[MODALITY_COLUMN]
     hierarchy: Hierarchy object 
         Specifies one or more classification levels and subsets.
     level
         Name of a classification level in the hierarchy to threshold and high-confidence threshold on
     data_key
-        Key in adata.obsm to be used for high-confidence thresholding
+        Key(s) in adata.obsm or .var[utils.MODALITY_COLUMN] to be used for high-confidence thresholding
     plot
         Passed to thresholding.threshold, whether to display histograms of thresholds
     reference: 
@@ -818,7 +832,7 @@ def hc_threshold(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         Dataframe of high-confidence calls for which classification an event falls into for the specified level of the hierarchy
     """
     # Get necessary information
-    markers,values = hierarchy.classification_markers(level)
+    markers,values = hierarchy.classification_markers(level) #getting hc markers
     
     # Setup templin
     templin = pd.DataFrame(index=adata.obs_names)
@@ -1036,7 +1050,7 @@ class _HVF_PCA_Neighbors():
                                         var = pd.DataFrame(index=self.features_used[self.feature_modalities == i]))
                 sc.pp.highly_variable_genes(adata,n_top_genes = 5000)
                 self.hvf.extend(adata.var_names[adata.var.highly_variable].tolist())
-        logg.debug('PCA for fit for _HVF_PCA_Neighbors')   
+        logg.debug('PCA for fit for _HVF_PCA_Neighbors') 
         adata = anndata.AnnData(X=X[:,[i in self.hvf for i in self.features_used]],dtype=np.float32)
         sc.pp.scale(adata,zero_center=False)
         sc.tl.pca(adata,n_comps=15)

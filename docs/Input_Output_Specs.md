@@ -43,7 +43,7 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
     
 - There is experimental support for expression of multiple modalities to be stored in the `.X`. This may not run reliably. 
     - For this, a column in the `.var`, specifying modality (e.g. `features_type`), must be included.
- 
+    
 ### `mmc.Hierarchy`
  - A `mmc.Hierarchy` object must be created as detailed in the docs, [Integrated Classification tutorial](Integrated_Classification.ipynb), and [Hierarchy Design tutorial](Hierarchy_Design.ipynb).
      - The structure and high-confidence markers used in the hierarchy can be checked using its `.display()` method.

@@ -16,6 +16,23 @@ pip install .
 ---
 ## Current version
 
+## [0.3.2] - 23FEB24
+
+#### Added
+
+- MMoCHi now supports more than 2 modalities by including each modality in the .X, then defining a .var column with each modalities name. This modality column name should be defined as mmc.MODALITY_COLUMN. This functionality is in beta
+- MMoCHi now supports a list of multiple data keys for mmc.utils.DATA_KEY and all relevant functions. E.g. when using two modalities DATA_KEY could equal ['morphology','landmark_protein'] to pull both modalities when relevant and only 'landmark_protein' for methods explicitly using the .obsm.
+
+#### Fixed
+
+- Minor typos in docstrings.
+
+#### Changed
+
+- Fancy thresholding sliders can now increment by 0.01 from 0.1.
+- X_modailty default changed from 'GEX' to 'gex'
+- Invalid utils.marker() calls will now raise AssertionErrors instead of ValueErrors if unable to find feature in data_key
+
 ### [0.3.1] - 26JAN24
 
 #### Added

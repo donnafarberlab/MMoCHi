@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 DATA_KEY = 'landmark_protein'
 BATCH_KEY = 'batch'
+MODALITY_COLUMN = None
 
 def convert_10x(adata: anndata.AnnData, drop_totalseq: bool=True, data_key: str='protein') -> anndata.AnnData:
     '''
@@ -49,7 +50,7 @@ def _default_kwargs(kwargs: dict, defaults: dict) -> dict:
 
 def intersect_features(adatas: List[anndata.AnnData], data_key: str=DATA_KEY) -> List[anndata.AnnData]:
     '''
-    Subsets each AnnData object to only genes and values of data_key found in every AnnData objects
+    Subsets each AnnData object to only genes and values of data_key found in every AnnData objects. Note: multiple valid obsm_keys is not supported.
     
     Parameters
     ----------
@@ -65,10 +66,15 @@ def intersect_features(adatas: List[anndata.AnnData], data_key: str=DATA_KEY) ->
     '''
     intersection_GEX = list(set.intersection(*(set(val) for val in [adata.var_names for adata in adatas])))
     if not data_key is None:
-        intersection_ADT = list(set.intersection(*(set(val) for val in [adata.obsm[data_key].columns for adata in adatas])))
+        obsm_key = list(set(data_key).intersection(set(adatas[0].obsm.keys())))
+        if len(obsm_key) > 1:
+            logg.warn(f'Multiple valid data_keys {obsm_key} not supported, will use {obsm_key[0]}')
+            obsm_key = obsm_key[0]
+        if len(obsm_key) != 0:
+            intersection_ADT = list(set.intersection(*(set(val) for val in [adata.obsm[d_key].columns for adata in adatas])))
     for i,adata in enumerate(adatas):
         adata = adata[:,intersection_GEX].copy()
-        if not data_key is None:
+        if not data_key is None and len(obsm_key) != 0:
             adata.obsm[data_key] = adata.obsm[data_key][intersection_ADT].copy()
         adatas[i] = adata
     return adatas
@@ -198,7 +204,7 @@ def batch_iterator(adata: anndata.AnnData, batch_key: str,
 
 def obsm_to_X(adata: anndata.AnnData, data_key: str=DATA_KEY) -> anndata.AnnData:
     '''
-    Makes the .obsm[data_key] of an AnnData object into its .X
+    Makes the .obsm[data_key] of an AnnData object into its .X, if multiple data_key values provided, will merge first found key.
     
     Parameters
     ----------
@@ -210,7 +216,7 @@ def obsm_to_X(adata: anndata.AnnData, data_key: str=DATA_KEY) -> anndata.AnnData
     adata_new
         Object with .X of AnnData.obsm[data_key]
     '''
-    adata_new = anndata.AnnData(adata.obsm[data_key],adata.obs,pd.DataFrame(index=adata.obsm[data_key].columns),dtype=float)
+    adata_new = anndata.AnnData(adata.obsm[d_key],adata.obs,pd.DataFrame(index=adata.obsm[d_key].columns),dtype=float)
     return adata_new
 
 def _marker(keyword: str, cols: List[str], allow_multiple: bool=False) -> Union[List[str], str]:
@@ -237,9 +243,9 @@ def _marker(keyword: str, cols: List[str], allow_multiple: bool=False) -> Union[
     '''
     keyword = keyword.lower()
     marker_name = [i for i in cols if keyword in i.lower()]
-    if marker_name == []: # If no marker was found
-        raise ValueError("\"" + keyword + "\" not found in marker list.") 
-    elif allow_multiple: # If we're allowing multiple just shove out whatever
+    
+    assert len(marker_name) > 0, "\"" + keyword + "\" not found in marker list."
+    if allow_multiple: # If we're allowing multiple just shove out whatever
         return marker_name
     elif len(marker_name) > 1: # if there're more than one result
         # Look for an exact-exact match
@@ -250,23 +256,23 @@ def _marker(keyword: str, cols: List[str], allow_multiple: bool=False) -> Union[
             if i.lower().split(keyword)[1].split('_')[0] == '': 
                 return i
         # If no single exact match is found
-        raise ValueError(f" '{keyword}' found multiple times in marker list: {marker_name} ") 
+        raise ValueError(f" '{keyword}' found multiple times in marker list: {marker_name}")
     else:
         return marker_name[0]
 
 def marker(adata: anndata.AnnData, parameter: Union[str, List[str]], 
-           data_key: Optional[str]=DATA_KEY, allow_multiple: bool=False) -> Union[str, List[str]]:
+           data_key: Optional[Union[str,list]]=DATA_KEY, allow_multiple: bool=False) -> Union[str, List[str]]:
     '''
-    Lookup a marker name within the .X or the .obsm[data_key]
+    Lookup a marker name within the .X, the .obsm[data_key], or .var[MODALITY_COLUMN] == data_key.
     
     Parameters
     ----------
     adata
-        Object with data in adata.X or adata.obsm[data_key]
+        Object with data in adata.X, adata.obsm[data_key], or where adata.var[MODALITY_COLUMN] == data_key
     parameter
         Parameters to search for in adata
     data_key
-        Location in the .obsm to look for marker name
+        Location in the .obsm or modality in .var to look for marker name
         If None, searches adata.var_names
     allow_multiple
         Whether to return a list of matches if there are multiple matches or throw an error
@@ -277,25 +283,49 @@ def marker(adata: anndata.AnnData, parameter: Union[str, List[str]],
             Name(s) of the marker in the adata object
     '''
     
-    if not data_key is None:
-        cols = adata.obsm[data_key].columns.to_list()
+    cols_list = []
+    if isinstance(data_key, list) or not data_key is None:
+        if not isinstance(data_key, list):
+            data_key = [data_key]
+        for d_key in data_key:
+            try: #.var
+                if MODALITY_COLUMN is None or MODALITY_COLUMN not in adata.var.columns:
+                    assert False, 'no valid modailty column'
+                cols = adata.var_names[adata.var[MODALITY_COLUMN] == d_key]
+                assert len(cols) > 0, f'data_key {d_key} not found in .var[{MODALITY_COLUMN}]'
+                cols_list.append(cols)
+            except AssertionError:
+                try:
+                    cols_list.append(adata.obsm[d_key].columns.to_list())
+                except AssertionError:
+                    pass
     else:
-        cols = adata.var_names.to_list()
+        cols_list.append(adata.var_names.to_list())
+
+    if not isinstance(parameter, list): # Run recursively if it's a list of inputs
+        parameter = [parameter]
     
-    if isinstance(parameter, list): # Run recursively if it's a list of inputs
-        results = []
-        for i, word in enumerate(parameter):
-            results.append(_marker(word, cols, allow_multiple))
-        if allow_multiple:
-            return sum(results,[])
-        else:
-            return results    
+    results = []
+    for i, word in enumerate(parameter):
+        for cols in cols_list:
+            try:
+                results.append(_marker(word, cols, allow_multiple))
+                break
+            except AssertionError:
+                pass
+            
+    if allow_multiple:
+        return sum(results,[])
+    elif len(results)==1:
+        return results[0]
+    elif len(results)==0:
+        return None
     else:
-        return _marker(parameter, cols, allow_multiple)
+        return results
         
 def umap_thresh(adata: anndata.AnnData, h,
                 markers: Union[str,List[str]]=None, batch_key: str=BATCH_KEY,
-                data_key: Optional[str]=DATA_KEY, umap_basis: str='X_umap',
+                data_key: Optional[Union[list,str]]=DATA_KEY, umap_basis: str='X_umap',
                 cmap: Optional[List[str]]=None, external_holdout: bool=False, key_added: str = 'lin',**kwargs):
     '''
     Plots UMAPs for the listed markers with thresholded expression data for the markers overlayed on top. 
@@ -313,7 +343,7 @@ def umap_thresh(adata: anndata.AnnData, h,
     batch_key
         Name of batch in adata to use for UMAP, uses batch_iterator to find key
     data_key
-        Location in the .obsm to look for marker name
+        Location in the .obsm and .var[MODALITY_COLUMN] to look for marker name
         If None, searches adata.var_names
     umap_basis
         Passed to scanpy.pl.embedding as basis
@@ -355,7 +385,12 @@ def umap_thresh(adata: anndata.AnnData, h,
         to_del = False
         try:
             m = marker(adata,m,data_key)+"_mod_"+data_key
-            adata.obs[m] = adata.obsm[data_key][m.split('_mod_')[0]]
+            try: 
+                assert MODALITY_COLUMN in adata.var.keys()
+                assert sum(adata.var[MODALITY_COLUMN] == [m.split('_mod_')[0]]) > 0
+                adata.obs[m] = adata[:,adata.var[MODALITY_COLUMN] == [m.split('_mod_')[0]]]
+            except:
+                adata.obs[m] = adata.obsm[data_key][m.split('_mod_')[0]]
             to_del = True
         except:
             m = marker(adata,m.split('_gex')[0],None)
@@ -438,11 +473,11 @@ def umap_interrogate_level(adata: anndata.AnnData, level: str, batch_key: str=No
         
 def get_data(adata: anndata.AnnData,
              parameter: str,
-             preferred_data_key: Optional[str]=None,
+             preferred_data_key: Optional[Union[List,str]]=None,
              return_source: bool=False,
              force_preferred: bool=False) -> np.array:
     '''
-    Searches an AnnData object along its .var, .obs, .layers, and .obsm[preferred_data_key] for a specified parameter. 
+    Searches an AnnData object along its .var, .var[MODALITY_COLUMN], .obs, .layers, and .obsm[preferred_data_key] for a specified parameter. 
         
     Parameters
     ----------
@@ -451,13 +486,13 @@ def get_data(adata: anndata.AnnData,
     parameter
         string to search the AnnData object for. Append:
         "_gex" to limit checking to the .var,
-        "_obs" to limit checking to the .obs,
-        "_mod_" followed by an obsm key/layer name to force checking there.
+        "_obs" to limit checking to the .obs or where .var[MODALITY_COLUMN] == 'obs',
+        "_mod_" followed by an var name in .var[MODALITY_COLUMN] or an obs key.
         
         Note, these symbols overwrite preferred data key, and it is assumed
         that these symbols are not used elsewhere for variable names
     preferred_data_key
-        Used to point to a key in .layers or in .obsm to check in
+        Used to point to key(s) in .layers, .var[MODALITY_COLUMN], or in .obsm to check in
     return_source
         Whether to return where the parameter was found in addition to the list of matches
     force_preferred
@@ -468,6 +503,7 @@ def get_data(adata: anndata.AnnData,
     data
        Array of data in the AnnData object whose label matches parameter
     '''
+            
     data = None
     if "_mod_" in parameter:
         force_preferred = True
@@ -476,35 +512,60 @@ def get_data(adata: anndata.AnnData,
     if "_gex" in parameter or "_obs" in parameter:
         preferred_data_key = None
 
-    if preferred_data_key is not None:
-        assert preferred_data_key not in adata.obsm.keys() or preferred_data_key not in adata.layers.keys(), \
-        f'Found {preferred_data_key} in both adata.obsm and adata.layers, please inspect AnnData Object and rectify.'
-        
-        if preferred_data_key in adata.layers.keys(): # Try checking layers and obsm
+    if isinstance(preferred_data_key, list):
+        for d_key in preferred_data_key:
             try:
-                data = np.array(adata.obs_vector(parameter,layer=preferred_data_key))
+                res = get_data(adata,parameter,d_key,return_source,force_preferred)
             except:
-                parameter = _marker(parameter,adata.var_names, False)
-                data = np.array(adata.obs_vector(parameter,layer=preferred_data_key))
-            
-        elif preferred_data_key in adata.obsm.keys():
+                res = None
+            if not res is None:
+                return res  
+        if res is None:
+            if force_preferred:
+                raise ValueError(f'Did not find {parameter} for any data_key: {preferred_data_key}') 
+                    
+                    
+    if preferred_data_key is not None:   
+        assert int(preferred_data_key in adata.obsm.keys()) + int(preferred_data_key in adata.layers.keys()) + int(MODALITY_COLUMN in adata.var.columns and preferred_data_key in adata.var[MODALITY_COLUMN]) <= 1, \
+        f'Found {preferred_data_key} in multiple locations in the adata.obsm, adata.X, and adata.X.layers(), please inspect AnnData object and rectify.'
+        
+        if MODALITY_COLUMN in adata.var.columns:
             try:
-                data = np.array(adata.obsm[preferred_data_key][parameter])
+                data = np.array(adata[:,adata.var[MODALITY_COLUMN] == preferred_data_key].obs_vector(parameter))
             except:
                 try:
-                    parameter = _marker(parameter,adata.obsm[preferred_data_key].columns,False)
+                    parameter = _marker(parameter,set(adata.obsm[MODALITY_COLUMN].values),False)
+                    data = np.array(adata[:,adata.var[MODALITY_COLUMN] == preferred_data_key].obs_vector(parameter))
+                except:
+                    pass   
+                
+        if data is None:      
+            if preferred_data_key in adata.layers.keys(): # Try checking layers and obsm
+                try:
+                    data = np.array(adata.obs_vector(parameter,layer=preferred_data_key))
+                except:
+                    parameter = _marker(parameter,adata.var_names, False)
+                    data = np.array(adata.obs_vector(parameter,layer=preferred_data_key)) 
+
+            elif preferred_data_key in adata.obsm.keys():
+                try:
                     data = np.array(adata.obsm[preferred_data_key][parameter])
                 except:
-                    pass
+                    try:
+                        parameter = _marker(parameter,adata.obsm[preferred_data_key].columns,False)
+                        data = np.array(adata.obsm[preferred_data_key][parameter])
+                    except:
+                        pass
+
                 
     if not data is None:
         if return_source:
-            return data, parameter+'_mod_'+preferred_data_key
+            return data, parameter + '_mod_' + preferred_data_key
         else:
             return data
     
     if force_preferred:
-        raise ValueError(f'Did not find {preferred_data_key} in adata.obsm or adata.layers\n'+
+        raise ValueError(f'Did not find {preferred_data_key} in adata.var[{MODALITY_COLUMN}], adata.obsm, or adata.layers\n'+
                          f'Or did not find {parameter} in that data')
     else:
         assert parameter not in adata.var_names or parameter not in adata.obs.keys(), \
@@ -524,7 +585,10 @@ def get_data(adata: anndata.AnnData,
         
         if not data is None:
             if return_source:
-                return data, parameter.split("_gex")[0]+'_gex'
+                if MODALITY_COLUMN in adata.var.columns:
+                    return data, parameter.split("_gex")[0] + '_mod_' + adata.var.loc[parameter.split("_gex")[0],MODALITY_COLUMN]
+                else:
+                    return data, parameter.split("_gex")[0]+'_gex'
             else:
                 return data
         
@@ -580,7 +644,7 @@ def _list_tools(list1: list, operator: str,
         return None
     
 def generate_exclusive_features(adata_list: Union[List[str], List[anndata.AnnData]], 
-                                data_key: str=DATA_KEY):
+                                data_key: Optional[Union[str,list]]=DATA_KEY):
     '''
     Reads in adata objects from a list of paths, or takes in a list of adata objects
     and finds the features in all objects
@@ -604,7 +668,14 @@ def generate_exclusive_features(adata_list: Union[List[str], List[anndata.AnnDat
         if data_key is None:
             features_one = list(adata.var_names)
         else:
-            features_one = list(adata.var_names) + list(adata.obsm[data_key].columns)
+            if not isinstance(data_key, list):
+                data_key = [data_key]
+            features_one = list(adata.var_names)
+            for d_key in data_key:
+                try:
+                    features_one.extend(list(adata.obsm[data_key].columns))
+                except:
+                    pass
         if features != []:
             features = [f for f in features_one if f in features]
             logg.print("intersection taken")
@@ -628,3 +699,4 @@ def _validate_names(names: List[str], reserved_strings: List[str]=['_obs','_gex'
         for reserved_string in reserved_strings:
             assert reserved_string not in name, f'invalid name {name}, contains {reserved_string}'
     return
+

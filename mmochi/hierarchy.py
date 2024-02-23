@@ -156,7 +156,7 @@ class Hierarchy:
             Name of the Subset that should parent this new node, use 'All' for the root node.
         markers
             The features that will be used for high-confidence thresholding to define subsets beneath this classification. During thresholding, 
-            matching or similar feature names are looked up first in the provided data_key, then in the .var. See mmc.utils.marker for details 
+            matching or similar feature names are looked up first in the provided data_key(s), then in the .var. See mmc.utils.marker for details 
             on marker lookup.
         is_cutoff
             Whether to be a cutoff or a classifier. If None, uses the default.
@@ -755,7 +755,7 @@ class Hierarchy:
         return    
 
     def run_all_thresholds(self, adata: anndata.AnnData,
-                           data_key: str=utils.DATA_KEY, batch_key: str=None,
+                           data_key: Optional[Union[str,list]]=utils.DATA_KEY, batch_key: str=None,
                            mode: str='fill in', interactive: bool=True,
                            plot: bool=True, limit: Optional[Union[str, List[str]]]=None, 
                            batch_marker_order: bool=False, skip: List[str]=[], bins: int=100,
@@ -769,7 +769,7 @@ class Hierarchy:
         adata
             Object containing marker expression in the .X, .obsm[data_key], or .obs for high confidence thresholding.
         data_key
-            obsm location to probe for other modalities beyond the .X
+            obsm or .var[utils.MODALITY_COLUMN] location to probe for other modalities beyond the .X
         batch_key
             If none, don't run with batch. Otherwise, the batch on which to threshold 
         mode
@@ -893,7 +893,7 @@ class Hierarchy:
             all_markers.extend(self.classification_markers(name)[0])
         return set(all_markers)
 
-    def check_all_markers(self, adata: anndata.AnnData, data_key: Optional[str]=utils.DATA_KEY):
+    def check_all_markers(self, adata: anndata.AnnData, data_key: Optional[Union[str,list]]=utils.DATA_KEY):
         '''
         Asserts all markers in hierarchy identified by `.get_all_markers()` are in adata.X or .obsm[data_key].
         
@@ -902,7 +902,7 @@ class Hierarchy:
         adata
             Object containing marker expression in the .X, .obsm[data_key], or .obs for high confidence thresholding.
         data_key
-            obsm location to probe for other modalities beyond the .X
+            obsm or .var[utils.MODALITY_COLUMN] location to probe for other modalities beyond the .X
         '''
         all_markers = self.get_all_markers()
         cannot_find = []
@@ -911,7 +911,7 @@ class Hierarchy:
                 utils.get_data(adata,i,data_key)
             except:
                 cannot_find.append(i)
-        assert not cannot_find, f'Cannot find any of {cannot_find} in adata.X or adata.obsm["{data_key}"]'
+        assert not cannot_find, f'Cannot find any of {cannot_find} in adata.X, adata.obsm["{data_key}"], or adata.var["{utils.MODALITY_COLUMN}"]["{data_key}"]'
         return
     
     def color_dict(self, new_color_palette: bool = False, 
@@ -1101,7 +1101,7 @@ class Hierarchy:
         return string_graphviz   
     
     def publication_export(self, adata: Optional[anndata.AnnData]=None,
-                           batches: Optional[List[str]]=None, data_key: Optional[str]=None,
+                           batches: Optional[List[str]]=None, data_key: Optional[Union[str,list]]=None,
                            filepath: str=''):
         """
         Creates a formatted csv files of your hierarchy, including its high confidence definitions and thresholds. 
@@ -1121,7 +1121,7 @@ class Hierarchy:
         batches
             A list of batches to find thresholds for. If None, just creates thresholds for a single batch
         data_key
-            Used to point to a key in .layers or in .obsm to check for marker names
+            Used to point to a key in .obsm or .var[utils.MODALITY_COLUMN] to check for marker names
         filepath
             path where the csv files are saved
         """
