@@ -15,7 +15,7 @@ pip install .
 ---
 ## Current version
 
-### [0.3.5dev] - 24MAY25
+### [0.3.5] - 24MAY25
 
 #### Added
 
