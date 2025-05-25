@@ -117,6 +117,7 @@ python -m pytest
 
 ### Troubleshooting installation
 Although conda usually handles conflicts between dependency versions, issues sometimes still arise. During our testing suite, we generate functional environments for all supported Python versions. These example environments can be found in the [example_envs](./example_envs/) directory of this repo. You can use these environments to identify non-conflicting package versions.
+If you receive outputs such as `FloatSlider(value=...)` when trying to run thresholding steps, you likely do not have the widgets extension installed or properly configured in Jupyter. For more information on troubleshooting, see [their documentation](https://ipywidgets.readthedocs.io/en/latest/user_install.html). If troubleshooting this step fails, remove `"fancy"` from the argument in the `mode` parameter of the `mmc.Hierarchy.run_all_thresholds` method to set thresholds without needing these widgets.
 
 ### For developers
 Contributions to MMoCHi are welcome. Please get in touch if you would like to discuss. To install for development, navigate to MMoCHi's root directory and create an editable install as follows:

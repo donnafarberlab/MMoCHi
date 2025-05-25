@@ -15,7 +15,7 @@ pip install .
 ---
 ## Current version
 
-## [0.3.5dev] - 24MAY25
+### [0.3.5dev] - 24MAY25
 
 #### Added
 
@@ -25,9 +25,9 @@ pip install .
 
 #### Changed
 
-- Streamlined installation instructions
+- Streamlined installation instructions and linked troubleshooting instructions for the Jupyter Widgets extension
 - Simplified tox testing and expanded to Python versions 3.11, 3.12, and 3.13
-- Replaced outdated `Python3_8_requirements.txt` file with a satisfactory set of dependencies identified by conda during tox-testing
+- Replaced outdated `Python3_8_requirements.txt` file with a satisfactory set of dependencies identified by conda during tox-testing. These environment files can be found in the `example_envs` directory
 
 #### Fixed
 
@@ -42,10 +42,11 @@ pip install .
 - Explicit casting of various dtypes to suppress warnings
 - Fixed bug in `mmc.utils.generate_exclusive_features` when reading in new `AnnData` objects
 - Removed unintentional return statements in testing scripts
+- Added explicit request for `lxml_html_clean` to the docs installation to satisfy sphinx dependencies
 
 
 
-## [0.3.2] - 23FEB24
+### [0.3.2] - 23FEB24
 
 #### Added
 
@@ -119,6 +120,10 @@ pip install .
 - Silenced many warnings when running pytest
 
 - Import `threshold` and `run_threshold` from the `mmc.thresholding` module in __init__.py for consistency (so they are now accessible by `mmc.threshold` or `mmc.run_threshold`)
+
+---
+
+## Past versions
 
 ### [0.2.3] - 21AUG23
 
@@ -276,10 +281,6 @@ pip install .
 - `**kwargs` can now be passed through `mmc.plot_confusion` to `sklearn.metrics.ConfusionMatrixDisplay.from_predictions()`
 
 - Added support for recent versions of scikit-fda, which should include support for the current version: `skfda==0.8.1`. 
-
----
-
-## Past versions
 
 ### [0.1.3] - 22Dec22
 
