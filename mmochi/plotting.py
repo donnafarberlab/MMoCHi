@@ -9,6 +9,7 @@ import random
 import scanpy as sc
 from typing import Union, Optional, Sequence, Any, Mapping, List, Tuple, Callable, List
 import anndata
+import os 
 
 from . import utils
 from .logger import logg
@@ -428,7 +429,7 @@ def _plot_confidence(adata: anndata.AnnData, level: str,
 
 def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]],
                             hierarchy, 
-                            reference: str='hc -> class', data_key: str=utils.DATA_KEY, 
+                            reference: str='hc -> class', data_key: Optional[Union[str,list]]=utils.DATA_KEY, 
                             holdout_only: bool=False, batch_key: str=None, key_added: str='lin',
                             save: str=None, show: bool=True,
                             title_addition: str=None):
@@ -467,8 +468,10 @@ def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]
         for level in levels:
             fig, axs = _plot_important_features(adata[batch_mask],level,hierarchy,reference, holdout_only,data_key)
             axs[0].set_title('GEX')
-            if not data_key is None:
-                if data_key == 'protein':
+            if not data_key is None: 
+                if isinstance(data_key, list):
+                    axs[1].set_title(' + '.join(data_key))
+                elif data_key == 'protein':
                     axs[1].set_title('ADT')
                 else:
                     axs[1].set_title(data_key)
@@ -482,7 +485,7 @@ def plot_important_features(adata: anndata.AnnData, levels: Union[str, List[str]
 
 def _plot_important_features(adata: anndata.AnnData, level: str,
                              hierarchy, reference: str='hc -> class', holdout_only: bool=False,
-                             data_key: str=utils.DATA_KEY, key_added: str='lin'):
+                             data_key: Optional[Union[str,list]]=utils.DATA_KEY, key_added: str='lin'):
     '''Creates violin plots for the most important 25 gene, protein, or overall features
     
     Parameters
@@ -511,7 +514,20 @@ def _plot_important_features(adata: anndata.AnnData, level: str,
     if reference == 'hc -> class':
         adata.obs[reference] = adata.obsm[key_added][level+'_hc'].astype(str) +" -> "+ adata.obsm[key_added][level+'_class'].astype(str)
     df = feature_importances(hierarchy, level)
-    is_protein = df.Feature.str.split('_mod_',expand=True)[1] == data_key
+    
+    obsm_key = None
+    if data_key is not None:
+        if not isinstance(data_key, list):
+            data_key = [data_key]
+        obsm_key = list(set(adata.obsm.keys()).intersection(set(data_key)))
+        if len(obsm_key) == 0:
+            logg.warn(f'No keys {data_key} in .obsm')
+            obsm_key = None
+        if len(obsm_key) > 1:
+            logg.warn(f'Multiple data_keys in .obsm [{obsm_key}], defaulting to {list(obsm_key)[0]}')
+    
+    is_protein = df.Feature.str.split('_mod_',expand=True)[1] == obsm_key[0]
+
     df.Feature = df.Feature.str.split('_mod_',expand=True)[0]
     df_gene = df[~is_protein]
     df_prot = df[is_protein]
@@ -525,7 +541,13 @@ def _plot_important_features(adata: anndata.AnnData, level: str,
                          dendrogram=True, ax=axs[0], show=False, use_raw=False)
     if data_key is None:
         return fig, axs
-    adata2 = utils.obsm_to_X(adata, data_key=data_key)
-    sc.pl.stacked_violin(adata2, df_prot.head(25).Feature.tolist(), reference, swap_axes=True,
+    if obsm_key is not None:
+        for o_key in obsm_key:
+            adata2 = utils.obsm_to_X(adata, data_key=obsm_key)
+            sc.pl.stacked_violin(adata2, df_prot.head(25).Feature.tolist(), reference, swap_axes=True,
+                         dendrogram=True, ax=axs[1], show=False, use_raw=False)
+    else:
+        adata2 = utils.obsm_to_X(adata, data_key=obsm_key)
+        sc.pl.stacked_violin(adata2, df_prot.head(25).Feature.tolist(), reference, swap_axes=True,
                          dendrogram=True, ax=axs[1], show=False, use_raw=False)
     return fig, axs

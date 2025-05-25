@@ -2,6 +2,7 @@
 
 <img align="right" src="./docs/_static/mmochi_logo.svg" width="480">
 
+
 ## About
 MMoCHi is a hierarchical classification system designed for CITE-Seq data, but applicable to diverse single-cell sequencing modalities. 
 It includes tools for:
@@ -11,11 +12,22 @@ It includes tools for:
 3. <b>Building a hierarchy</b> of cell subset classifiers 
 4. <b>Training and evaluating</b> random forest classifiers at each hierarchy level
 
+Details about the algorithm, example applications, and benchmarking is available in our paper at [Cell Reports Methods](https://doi.org/10.1016/j.crmeth.2024.100938)
+
+<img align="center" src="./docs/_static/MMoCHi_GraphicalAbstract.jpg" width="50%">
+
 ## Read the Docs
 You can read the documentation [here](https://mmochi.readthedocs.io)!
 
-## Check out our preprint 
-Daniel P. Caron, William L. Specht, David Chen, Steven B. Wells, Peter A. Szabo, Isaac J. Jensen, Donna L. Farber, Peter A. Sims. "**Multimodal hierarchical classification of CITE-seq data delineates immune cell states across lineages and tissues**." bioRxiv, 2023 [[Open access article]](https://www.biorxiv.org/content/10.1101/2023.07.06.547944v1)
+
+## Reference
+
+If you find MMoCHi helpful, please cite our work!
+
+Daniel P. Caron, William L. Specht, David Chen, Steven B. Wells, Peter A. Szabo, Isaac J. Jensen, Donna L. Farber, Peter A. Sims. "**Multimodal hierarchical classification of CITE-seq data delineates immune cell states across lineages and tissues**." Cell Reports Methods, 2025 [[Open Access]](https://doi.org/10.1016/j.crmeth.2024.100938)
+
+
+
 
 ## Tutorials
 
@@ -37,11 +49,11 @@ Daniel P. Caron, William L. Specht, David Chen, Steven B. Wells, Peter A. Szabo,
 
 ### Setting up a virtual environment
 
-MMoCHi was developed using Python 3.8, but may also work on later Python versions. We recommend isolating installation using a virtual environment. You can create a virtual environment using miniconda or anaconda:
+MMoCHi supports Python versions >= 3.8, but we have found it easiest to install on versions >=3.10. We recommend isolating installation using a virtual environment. You can create a virtual environment using miniconda or anaconda:
 ```
-conda create -n mmochi python=3.8
+conda create -n mmochi python=3.11
 ```
-Once you create this enviornment, activate it: 
+Once you create this environment, activate it: 
 ```
 conda activate mmochi
 ```
@@ -104,12 +116,8 @@ python -m pytest
 ```
 
 ### Troubleshooting installation
-Although conda usually handles conflicts between dependency versions, issues sometimes still arise. Here, we have also provided a list of set dependencies for Python 3.8. Recreate your environment, set up Jupyter, navigate to MMoCHi's root directory, then install as follows:
-```
-conda activate mmochi
-python -m pip install -r Python3_8_requirements.txt
-python -m pip install .
-```
+Although conda usually handles conflicts between dependency versions, issues sometimes still arise. During our testing suite, we generate functional environments for all supported Python versions. These example environments can be found in the [example_envs](./example_envs/) directory of this repo. You can use these environments to identify non-conflicting package versions.
+If you receive outputs such as `FloatSlider(value=...)` when trying to run thresholding steps, you likely do not have the widgets extension installed or properly configured in Jupyter. For more information on troubleshooting, see [their documentation](https://ipywidgets.readthedocs.io/en/latest/user_install.html). If troubleshooting this step fails, remove `"fancy"` from the argument in the `mode` parameter of the `mmc.Hierarchy.run_all_thresholds` method to set thresholds without needing these widgets.
 
 ### For developers
 Contributions to MMoCHi are welcome. Please get in touch if you would like to discuss. To install for development, navigate to MMoCHi's root directory and create an editable install as follows:
@@ -125,6 +133,7 @@ python -m pytest --nbmake docs/*.ipynb --cov=mmochi --cov-report=html --cov-appe
 
 python -m tox -r
 ```
+After running tox testing, you can export the generated environments to the `example_envs` directory by using `source export_tox_envs.sh`
 
 You can also compile the docs using the following command:
 ```
@@ -133,7 +142,7 @@ make html
 ```
 There will be many warnings, but it should end with `"build succeeded"`. You can then view the docs by opening `docs/_build/html/index.html` in your local browser.
 
-Occationally, there are errors running pandoc when installed using pip. Try resinstalling with conda:
+Occasionally, there are errors running pandoc when installed using pip. Try reinstalling with conda:
 ```
 pip uninstall pandoc
 conda install -c conda-forge pandoc

@@ -52,9 +52,9 @@ def test_marker_get_data(load_adata):
     utils.get_data(adata,'CD19_gex')
     with pytest.raises(ValueError):
         utils.get_data(adata,'CD1999_gex')
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         utils.marker(adata, 'CD1999','protein')
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         utils.marker(adata, 'CD3E','protein')
     with pytest.raises(ValueError):
         utils.get_data(adata, 'CD3E','protein',False,True)
@@ -71,8 +71,5 @@ def test_marker_get_data(load_adata):
     utils.get_data(adata, 'batch_obs',return_source=True)
     with pytest.raises(ValueError):
         utils.get_data(adata, 'CD1999','proteins')  
-        
-# def test_umap_thresh():
-    
-    
+
     

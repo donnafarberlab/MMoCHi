@@ -14,4 +14,3 @@ scikit-fda>=0.5
 seaborn>=0.12.2
 ipython>=8.4.0
 ipykernel>=6.18.0
-anndata<0.10.2

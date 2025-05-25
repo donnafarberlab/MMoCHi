@@ -12,7 +12,7 @@ from .logger import logg
 from . import utils
 
 def run_threshold(markname: str, adata: anndata.AnnData,
-                  data_key: Optional[str], thresh: Sequence[Union[int,float]]) -> np.array:
+                  data_key: Optional[Union[str,list]], thresh: Sequence[Union[int,float]]) -> np.array:
     '''
     Lightweight wrapper to find the marker (utils.get_data()), then performs pos/neg/? thresholding on all events in the AnnData, given a list of positive and negative thresholds.
     
@@ -23,7 +23,7 @@ def run_threshold(markname: str, adata: anndata.AnnData,
     adata
         AnnData object containing normalized (and possibly batch corrected) events for thresholding
     data_key
-        Name of the key in .obsm[] to look for when searching for markname
+        Name of the key(s) in .obsm[] or .var[MODALITY_COLUMN] to look for when searching for markname
     thresh
         Upper and lower thresholds to apply for positive and negative populations (no specific order needed)
     
@@ -165,8 +165,8 @@ def _fancy_interactive_threshold(thresh: Tuple[Union[int, float]], maximum:Union
     except ImportError:
         raise ImportError('Please install ipywdigets using pip install ipywdigets')
     
-    slider1 = FloatSlider(value= max(thresh),min=0,max=maximum,step=0.1,readout=True,layout=Layout(width='600px'))
-    slider2 = FloatSlider(min(thresh),min=0,max=maximum,step=0.1,readout=True,layout=Layout(width='600px'))
+    slider1 = FloatSlider(value= max(thresh),min=0,max=maximum,step=0.01,readout=True,layout=Layout(width='600px'))
+    slider2 = FloatSlider(min(thresh),min=0,max=maximum,step=0.01,readout=True,layout=Layout(width='600px'))
     display(slider1)
     display(slider2)
     return (slider1,slider2)
@@ -187,7 +187,7 @@ def _fancy_resolver(promise: Tuple[float]) -> Tuple[float,float]:
     return tuple(sorted((promise[0].value,promise[1].value)))
 
 def threshold(markname: str, adata: anndata.AnnData,
-              data_key: str=utils.DATA_KEY, preset_threshold: Tuple[Union[int, float]]=None,
+              data_key: Optional[Union[str,list]]=utils.DATA_KEY, preset_threshold: Tuple[Union[int, float]]=None,
               include_zeroes: bool=False, n: int=0,
               force_model: bool=False, plot: bool=True,
               title_addition: str='', interactive: bool=True,
@@ -209,7 +209,7 @@ def threshold(markname: str, adata: anndata.AnnData,
     adata
         AnnData object for creating thresholds, containing expression in the .X and/or the .obsm[data_key].
     data_key
-        Name of the key in .obsm to look for when searching for markname. See utils.get_data for details on how searching is performed.
+        Name of the key in .obsm or .var[utils.MODALITY_COLUMN] to look for when searching for markname. See utils.get_data for details on how searching is performed.
     present_threshold
         Max and minimum thresholds to apply for positive and negative populations, overrides automated calculation
     included_zeroes
@@ -270,7 +270,7 @@ def threshold(markname: str, adata: anndata.AnnData,
         return thresh
     
 def _calc_threshold(markname: str, adata: anndata.AnnData,
-                    data_key: str=utils.DATA_KEY, n: int=0,
+                    data_key: Optional[Union[str,list]]=utils.DATA_KEY, n: int=0,
                     include_zeroes: bool=False, preset_threshold: Tuple[Union[int,float]]=None,
                     force_model: bool=False) -> Tuple[anndata.AnnData, Tuple[float,float], Tuple[Tuple[float,int], Tuple[float,int], Tuple[float,int]], str]:
     '''
@@ -288,7 +288,7 @@ def _calc_threshold(markname: str, adata: anndata.AnnData,
         adata
             AnnData object for creating thresholds, containing expression in the .X and/or the .obsm[data_key].
         data_key
-           Name of the key in .obsm[] to look for when searching for markname.
+           Name of the key in .obsm[] or .var[utils.MODALITY_COLUMN] to look for when searching for markname.
         n
             Determines the number of Gaussians to fit. Can be 1, 2, or 3.
         include_zeroes
@@ -317,7 +317,7 @@ def _calc_threshold(markname: str, adata: anndata.AnnData,
     '''
     data, markname_full = utils.get_data(adata,markname,data_key,return_source=True)
 
-    if "_gex" in markname_full or include_zeroes:
+    if include_zeroes:
         include_zeros=True
         mask = ~pd.Series(data).isna()
     else:

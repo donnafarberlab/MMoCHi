@@ -43,7 +43,7 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
     
 - There is experimental support for expression of multiple modalities to be stored in the `.X`. This may not run reliably. 
     - For this, a column in the `.var`, specifying modality (e.g. `features_type`), must be included.
- 
+    
 ### `mmc.Hierarchy`
  - A `mmc.Hierarchy` object must be created as detailed in the docs, [Integrated Classification tutorial](Integrated_Classification.ipynb), and [Hierarchy Design tutorial](Hierarchy_Design.ipynb).
      - The structure and high-confidence markers used in the hierarchy can be checked using its `.display()` method.
@@ -76,7 +76,7 @@ Helper functions (such as `mmc.preprocess_adatas`) may help convert `AnnData` ob
     - This will be higher for cells that are well-represented by high-confidence events and lower for cells that are less well-represented and may be useful for identifying problem-areas in classification
     - This should not be as a direct readout of classification certainty, as it does not take into account certainty of intermediate calls in the hierarchy. The `probability_cutoff` parameter in `mmc.classify()` may provide more ability to select for cells classified with high certainty. 
 
-### `.uns[{level}_probabilities]` (after running `mmc.classify(probabilities_suffix='_probabilites')`)
+### `.uns[{level}_probabilities]` (after running `mmc.classify(probabilities_suffix='_probabilities')`)
 
 - MMoCHi will optionally add `pandas.DataFrame` objects encoding the predicted probabilities for all classes in the multiclass at each level to the `.uns`. 
     - This can be very useful for troubleshooting classification results or using MMoCHi to generate cell type scores.
@@ -104,7 +104,7 @@ import pandas as pd
 
 adata = sc.read_adata('gex.h5ad')
 protein=sc.read_adata('adt.h5ad')
-# Note if protein.X is a sparse matrix, you may need to use protein.X.A
+# Note if protein.X is a sparse matrix, you may need to use protein.X.toarray()
 adata.obsm['protein'] = pd.DataFrame(protein.X, index=protein.obs_names, columns = protein.var_names)
 adata.write_h5ad('mmochi_formatted.h5ad')
 ```
@@ -132,7 +132,7 @@ import mudata as md
 mdata = md.read_h5mu('mudata.h5mu')
 
 adata = mdata.mod['gex'].copy()
-# Note if mdata.mod['adt'].X is a sparse matrix, you may need to use protein.X.A
+# Note if mdata.mod['adt'].X is a sparse matrix, you may need to use protein.X.to_array()
 adata.obsm['protein'] = pd.DataFrame(mdata.mod['adt'].X, 
                                      index=mdata.mod['adt'].obs_names, 
                                      columns=mdata.mod['adt'].var_names)

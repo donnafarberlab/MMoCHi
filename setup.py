@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.3.0' 
+VERSION = '0.3.5' 
 DESCRIPTION = 'MultiMOdal Classifier HIerarchy (MMoCHi)'
 LONG_DESCRIPTION = 'A reference-free hierarchical classification system designed for high-confidence thresholding of cell populations on CITE-Seq and training of random forests.'
 
@@ -21,6 +21,6 @@ setup(  name="mmochi",
                          'tutorials':['harmonypy'],
                          'docs':['sphinx==6.2.1','sphinx-rtd-theme==1.2.1','m2r2==0.3.2',
                                  'nbsphinx==0.9.2','jinja2==3.0.3','docutils','sphinx-autodoc-typehints==1.21.8',
-                                 'pandoc','sphinx_new_tab_link','jupyter_sphinx','sphinx-copybutton'],
+                                 'pandoc','sphinx_new_tab_link','jupyter_sphinx','sphinx-copybutton','lxml_html_clean'],
                          'pytest':['pytest','pytest-cov','pytest-fixtures','tox','nbmake','tox-conda']},
         classifiers= [])

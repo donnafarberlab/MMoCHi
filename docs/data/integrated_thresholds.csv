@@ -22,7 +22,7 @@ CD3,,5k_pbmc_protein_v3.h5,1.491614142,2.519185327,False
 CD3,,pbmc_10k_protein_v3,1.5,2.4,False
 CD3,,pbmc_10k_protein_v3.h5,1.4638821169999998,2.3,False
 CD3,,pbmc_1k_protein_v3.h5,1.422714081,2.243532176,False
-CD3,,,1.5,2.4,False
+CD3,,,1.4999999999999998,2.4,False
 CD33,,5k_pbmc_protein_v3,0.0,0.5,False
 CD33,,5k_pbmc_protein_v3.h5,0.0,0.5,False
 CD33,,pbmc_10k_protein_v3,0.0,0.5,False
@@ -38,7 +38,7 @@ CD4_gex,,5k_pbmc_protein_v3,0.0,0.4999999999999999,False
 CD4_gex,,5k_pbmc_protein_v3.h5,0.0,0.5,False
 CD4_gex,,pbmc_10k_protein_v3,0.0,0.5,False
 CD4_gex,,pbmc_10k_protein_v3.h5,0.0,0.5,False
-CD4_gex,,,0.0,0.4999999999999999,False
+CD4_gex,,,0.0,0.5,False
 CD56,,5k_pbmc_protein_v3,1.3,2.1,False
 CD56,,5k_pbmc_protein_v3.h5,1.2,2.1,False
 CD56,,pbmc_10k_protein_v3,1.3,2.1,False

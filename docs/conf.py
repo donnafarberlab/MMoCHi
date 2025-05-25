@@ -30,7 +30,7 @@ html_js_files = [
 ]
 
 project = 'MMoCHi'
-copyright = '2023, Daniel Caron'
+copyright = '2025, Daniel Caron'
 author = 'Daniel Caron'
 repository_url = "https://github.com/donnafarberlab/MMoCHi"
 

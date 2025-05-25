@@ -23,3 +23,8 @@ __pycache__/
 Thumbs.db
 .ipynb_checkpoints/
 .directory
+_hierarchy.csv
+.gitignore
+docs/data/thresholds.csv
+docs/data/tree.png
+_thresholds.csv

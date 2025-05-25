@@ -8,15 +8,15 @@ We hope to continually update this page with new hierarchies that we or members 
 
 <b><a href="#from-mmochi-manuscript">Example Hierarchies from MMoCHi Manuscript</a></b>
 
-These MMoCHi hierarchies were used for analyses in the original MMoCHi manuscript. We have included them here for insipration and so that users can more easily replicate our analyses.
+These MMoCHi hierarchies were used for analyses in the original MMoCHi manuscript. We have included them here for inspiration and so that users can more easily replicate our analyses.
 
 | Name | Short Description | Modalities | Species | Author(s) | Publication | Training Data | Date Posted
 |:---  |:---               |:---        |:---     |:---       |:---         |:---           |:---
-| <a href="#human-t-cell-subsets-v1">Human T cell subsets</a> | Classifier for 8 subsets of αβ T cells and monocytes | CITE-seq | *Homo sapiens* | Daniel P. Caron | [(Caron et al., bioRxiv, 2023)](https://doi.org/10.1101/2023.07.06.547944) | [(Caron et al., bioRxiv, 2023)](https://doi.org/10.1101/2023.07.06.547944) <br/> [[GSE229791]](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE229791) | 04JUL23
-| <a href="#human-immune-subsets-v1">Human immune subsets</a>  | Classifier for over 25 human immune cell subsets across tissue sites | CITE-seq | *Homo sapiens* | Daniel P. Caron | [(Caron et al., bioRxiv, 2023)](https://doi.org/10.1101/2023.07.06.547944) | [(Caron et al., bioRxiv, 2023)](https://doi.org/10.1101/2023.07.06.547944) <br/> [[GSE229791]](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE229791) | 04JUL23
-| <a href="#glioma-v1">Glioma biopsy</a>  | Classifier for neoplastic and non-neoplastic subsets in a high-grade glioma biopsy | scRNA-seq | *Homo sapiens* | Daniel P. Caron | N/A | [(Levitin et al., Mol Syst Biol., 2019)](https://doi.org/10.15252/msb.20188557) <br/> [[GSE116621]](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE116621) | 23JAN24
-| <a href="#sorted-t-and-nk-cells-v1">Ab-seq of sorted T and NK cells</a>  | Classifier for T cell and NK cell subsets adapted for Ab-seq | Ab-seq | *Homo sapiens* | Daniel P. Caron | N/A | [(Trzupek et al.,Wellcome Open Res., 2021)](https://doi.org/10.17605/OSF.IO/EDCTN) <br/> [[OSF: EDCTN]](https://doi.org/10.17605/OSF.IO/EDCTN) | 23JAN24
-| <a href="#xenium-of-human-lymph-node-v1">10x Xenium of human lymph node</a>  | Classifier for immune and structural cell types in a human lymph node using spatial information | 10x Xenium (Spatial) | *Homo sapiens* | Daniel P. Caron | N/A | [(10x Genomics)](https://www.10xgenomics.com/datasets)<br>[[Human Lymph Node Preview]](https://www.10xgenomics.com/datasets/human-lymph-node-preview-data-xenium-human-multi-tissue-and-cancer-panel-1-standard) | 23JAN24
+| <a href="#human-t-cell-subsets-v1">Human T cell subsets</a> | Classifier for 8 subsets of αβ T cells and monocytes | CITE-seq | *Homo sapiens* | Daniel P. Caron | [(Caron et al., Cell Reports Methods, 2025)](https://doi.org/10.1016/j.crmeth.2024.100938) | [(Caron et al., Cell Reports Methods, 2025)](https://doi.org/10.1016/j.crmeth.2024.100938) <br/> [[GSE229791]](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE229791) | 04JUL23
+| <a href="#human-immune-subsets-v1">Human immune subsets</a>  | Classifier for over 25 human immune cell subsets across tissue sites | CITE-seq | *Homo sapiens* | Daniel P. Caron | [(Caron et al., Cell Reports Methods, 2025)](https://doi.org/10.1016/j.crmeth.2024.100938) | [(Caron et al., Cell Reports Methods, 2025)](https://doi.org/10.1016/j.crmeth.2024.100938) <br/> [[GSE229791]](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE229791) | 04JUL23
+| <a href="#glioma-v1">Glioma biopsy</a>  | Classifier for neoplastic and non-neoplastic subsets in a high-grade glioma biopsy | scRNA-seq | *Homo sapiens* | Daniel P. Caron | [(Caron et al., Cell Reports Methods, 2025)](https://doi.org/10.1016/j.crmeth.2024.100938) | [(Levitin et al., Mol Syst Biol., 2019)](https://doi.org/10.15252/msb.20188557) <br/> [[GSE116621]](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE116621) | 23JAN24
+| <a href="#sorted-t-and-nk-cells-v1">Ab-seq of sorted T and NK cells</a>  | Classifier for T cell and NK cell subsets adapted for Ab-seq | Ab-seq | *Homo sapiens* | Daniel P. Caron | [(Caron et al., Cell Reports Methods, 2025)](https://doi.org/10.1016/j.crmeth.2024.100938) | [(Trzupek et al.,Wellcome Open Res., 2021)](https://doi.org/10.17605/OSF.IO/EDCTN) <br/> [[OSF: EDCTN]](https://doi.org/10.17605/OSF.IO/EDCTN) | 23JAN24
+| <a href="#xenium-of-human-lymph-node-v1">10x Xenium of human lymph node</a>  | Classifier for immune and structural cell types in a human lymph node using spatial information | 10x Xenium (Spatial) | *Homo sapiens* | Daniel P. Caron | [(Caron et al., Cell Reports Methods, 2025)](https://doi.org/10.1016/j.crmeth.2024.100938) | [(10x Genomics)](https://www.10xgenomics.com/datasets)<br>[[Human Lymph Node Preview]](https://www.10xgenomics.com/datasets/human-lymph-node-preview-data-xenium-human-multi-tissue-and-cancer-panel-1-standard) | 23JAN24
 
 <b><a href="#community-submitted">Community Submitted Hierarchies</a></b>
 
@@ -24,7 +24,7 @@ We welcome community members to submit the hierarchies they use to aid others as
 
 | Name | Short Description | Modalities | Species | Author(s) | Publication | Training Data | Date Posted
 |:---  |:---               |:---        |:---     |:---       |:---         |:---           |:---
-| <a href="#human-gamma-delta-t-cell-v-delta-subsets-v1">Human γδ T cell Vδ subsets</a> |  Classifer to subset γδ T cells into Vδ1, Vδ2 or 'other' | scRNA-seq | *Homo sapiens* | Joshua I. Gray | N/A | N/A| 26JAN24
+| <a href="#human-gamma-delta-t-cell-v-delta-subsets-v1">Human γδ T cell Vδ subsets</a> |  Classifier to subset γδ T cells into Vδ1, Vδ2 or 'other' | scRNA-seq | *Homo sapiens* | Joshua I. Gray | [(Gray et al., Science Immunology, 2024)](https://doi.org/10.1126/sciimmunol.adn3954) | [(Gray et al., Science Immunology, 2024)](https://doi.org/10.1126/sciimmunol.adn3954)<br>[[GSE240858]](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE240858) | 26JAN24
 | <a href="#extended-human-immune-subsets-v1">Extended human immune subsets</a>  | Classifier for 34 human immune subsets across tissue sites | CITE-seq | *Homo sapiens* | Daniel P. Caron & Steven B. Wells | [(Wells et al., bioRxiv, 2024)](https://doi.org/10.1101/2024.01.03.573877) | N/A | 26JAN24
 
 <b><a href="#prior-versions">Prior Versions of Hierarchies</a></b>
@@ -395,7 +395,7 @@ h.add_subset('myelocyte', 'gross', dict(any_of = [['CD163','CD64','OLR1_gex'],['
                                                   ['C1QA','C1QB','C1QC'],['S100A9','S100A8','FCN1'],['MARCO','MRC1','SELENOP','MERTK'],['MPO','ELANE','PRSS57','CYTL1','C1QTNF4']], n=[1,2,2,3,2,3,1], 
                                         neg=['CD2_gex','CD19','CD20','CD127','TPSB2_gex','CD3','MMP9_gex','CPA3_gex','CD2','JCHAIN_gex'], any_ofs_connector='|'))
 h.add_subset('mast_cell', 'gross',dict(neg=['MRC1_gex','OLR1_gex','CD64','CLEC9A_gex','LILRA4_gex','PLD4','JCHAIN_gex','CD3','CD2_gex','CD19','CD20','CD127','MPO_gex','ELANE_gex','CD163'],
-                                         pos=['CD33'],any_of=['TPSB2_gex','CPA3'_gex]))
+                                         pos=['CD33'],any_of=['TPSB2_gex','CPA3_gex']))
 h.add_subset('neutrophil', 'gross',dict(neg=['MRC1_gex','OLR1_gex','CLEC9A_gex','LILRA4_gex','PLD4_gex','JCHAIN_gex','CD3','CD2_gex','CD19','CD20','CD127','MPO_gex','ELANE_gex'],
                                         any_of=[['S100A8_gex','S100A9_gex'],['MMP9_gex','G0S2_gex','ALPL_gex','VNN2_gex']],n=[1,2])) 
 
@@ -446,7 +446,7 @@ h.add_subset('cd4_naive_cm','cd4_mem',dict(any_of=['CD62L',"SELL_gex","CCR7"],ne
 h.add_subset('cd4_treg','cd4_mem',dict(any_of=[["FOXP3_gex", "IL10_gex", "IKZF2_gex",]], neg=["CCL5_gex", "CD127"], n=[1]))
 h.add_subset('cd4_em','cd4_mem',dict(any_of=['CD69', "GZMA_gex", "GZMB_gex", "GZMK_gex", "GZMH_gex", "IFNG_gex", "PDCD1_gex"], neg=['CD62L', 'CD45RA', 'FOXP3_gex', "IKZF2_gex"]))
 h.add_subset('cd4_temra','cd4_mem',dict( any_of=[['CD45RA',],['CCL5_gex', "FCGR3A_gex", "FGFBP2_gex", "KLRG1_gex", "GZMA_gex", "GZMB_gex", "GZMK_gex", "GZMH_gex", "IFNG_gex", "PDCD1_gex"]],
-                                         neg=['FOXP3_gex', 'CD62L_gex', 'SELL_gex', 'CCR7_gex', "IKZF2_gex"], n=[1,1], any_ofs_connector='&'))
+                                         neg=['FOXP3_gex', 'CD62L', 'SELL_gex', 'CCR7_gex', "IKZF2_gex"], n=[1,1], any_ofs_connector='&'))
 
 h.add_classification('cd4_ncm', 'cd4_naive_cm', ['CD45RA',"CD95"])
 h.add_subset('cd4_naive','cd4_ncm',dict(pos=['CD45RA'], neg=["CD95"]))

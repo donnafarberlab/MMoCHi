@@ -2,8 +2,7 @@
 
 All notable changes to this package will be documented in this file.
 
-The format is based on [Keep a Changelog](http://keepachangelog.com/) and after v1.0.0 release, 
-this project will adhere to [Semantic Versioning](http://semver.org/).
+The format is based on [Keep a Changelog](http://keepachangelog.com/) and attempts to adhere to [Semantic Versioning](http://semver.org/).
 
 To update, replace your repository with a fresh clone, and install using pip, as before:
 
@@ -15,6 +14,54 @@ pip install .
 ```
 ---
 ## Current version
+
+### [0.3.5] - 24MAY25
+
+#### Added
+
+- Added force_model argument to mmc.run_all_thresholds to allow for forced calculation of a Gaussian mixture model for selected features (can be used to override default thresholds of 0 and .5 for genes)
+- Added user-readable output for `mmc.Hierarchy` objects listing the classification layers, terminal subset identities, and whether classifiers appear to have been trained.
+- Added links in documentation to published paper
+
+#### Changed
+
+- Streamlined installation instructions and linked troubleshooting instructions for the Jupyter Widgets extension
+- Simplified tox testing and expanded to Python versions 3.11, 3.12, and 3.13
+- Replaced outdated `Python3_8_requirements.txt` file with a satisfactory set of dependencies identified by conda during tox-testing. These environment files can be found in the `example_envs` directory
+
+#### Fixed
+
+- Fixed `mmc.stacked_density_plots` function to allow gene plotting
+- Fixed `mmc.utils.obsm_to_X` and `mmc.utils.marker` to appropriately support the `data_key` structure introduced in v0.3.2
+- Bug fix in `mmc.plot_important_features` preventing pytest completion 
+- Fix typos in "Extended human immune subsets (v1)" example hierarchy
+- Fixed spelling errors throughout documentation
+- Removed `dtype` argument from `anndata.AnnData` due to its pending deprecation
+- Replaced references to the `.A` property in sparse matrices with `.toarray` due to deprecation
+- Explicit casting of some masks to arrays to prevent dtype errors
+- Explicit casting of various dtypes to suppress warnings
+- Fixed bug in `mmc.utils.generate_exclusive_features` when reading in new `AnnData` objects
+- Removed unintentional return statements in testing scripts
+- Added explicit request for `lxml_html_clean` to the docs installation to satisfy sphinx dependencies
+
+
+
+### [0.3.2] - 23FEB24
+
+#### Added
+
+- MMoCHi now supports more than 2 modalities by including each modality in the .X, then defining a .var column with each modalities name. This modality column name should be defined as `mmc.MODALITY_COLUMN`. This functionality is in beta
+- MMoCHi now supports a list of multiple data keys for `mmc.utils.DATA_KEY` and all relevant functions. E.g. when using two modalities `DATA_KEY` could equal `['morphology','landmark_protein']` to pull both modalities when relevant and only `'landmark_protein'` for methods explicitly using the `.obsm`.
+
+#### Fixed
+
+- Minor typos in docstrings.
+
+#### Changed
+
+- Fancy thresholding sliders can now increment by 0.01 from 0.1.
+- X_modality default changed from 'GEX' to 'gex'
+- Invalid utils.marker() calls will now raise AssertionErrors instead of ValueErrors if unable to find feature in data_key
 
 ### [0.3.1] - 26JAN24
 
@@ -38,7 +85,7 @@ pip install .
 
 - Added `mmc.Hierarchy.get_optimal_clf_kwargs` and `mmc.Hierarchy.get_clf_kwargs` to get a dataframe displaying either the optimized or the original keyword arguments (hyperparameters) passed to Random Forest.
 
-- Added `mmc.Hierachy.get_clf_kwarfs` and `mmc.Hierachy.get_optimal_clf_kwargs` functions to display default random forest classifier kwargs and ones selected by hyperparameter optimization (after `mmc.classify` has been run) respectively
+- Added `mmc.Hierarchy.get_clf_kwargs` and `mmc.Hierarchy.get_optimal_clf_kwargs` functions to display default random forest classifier kwargs and ones selected by hyperparameter optimization (after `mmc.classify` has been run) respectively
 
 - Added a [page to documentation](Landmark_Registration_Advice.md) for sharing default `marker_bandwidth` values for various antibodies and included more examples to the [Example Hierarchies](Example_Hierarchies.md) page.
 
@@ -73,6 +120,10 @@ pip install .
 - Silenced many warnings when running pytest
 
 - Import `threshold` and `run_threshold` from the `mmc.thresholding` module in __init__.py for consistency (so they are now accessible by `mmc.threshold` or `mmc.run_threshold`)
+
+---
+
+## Past versions
 
 ### [0.2.3] - 21AUG23
 
@@ -125,14 +176,14 @@ pip install .
 
 - Removed mmochi package from Python3_8_requirements.txt 
 
-- Prevented plot windows from oppening while running pytest on some systems
+- Prevented plot windows from opening while running pytest on some systems
 
 ### [0.2.1] - 17JUN23
 
 #### Added
 
 - Functionality to restore `adata.obs_names` if `mmc.classify` is interrupted. 
-    - Internally, `mmc.classify` converts `adata.obs_names` to indicies, and remaps them at the end of the function.
+    - Internally, `mmc.classify` converts `adata.obs_names` to indices, and remaps them at the end of the function.
     - Now, `adata.obs_names` can be restored from the temporary column: `adata.obs[‘MMoCHi_obs_names’]`
     
 - New option for `mmc.density_plot` whether to hide events with 0 expression (default: True)
@@ -161,7 +212,7 @@ pip install .
 
 - Edited the tutorials for [Integrated Classification](Integrated_Classification.ipynb) and [Landmark Registration](Landmark_Registration.ipynb)
 
-- Created a new helper function (`mmc.umap_interrograte_level()`) for plotting UMAPs to understand classification performance
+- Created a new helper function (`mmc.umap_interrogate_level()`) for plotting UMAPs to understand classification performance
 
 - Added variables for setting the default `data_key` and `batch_key` for many functions by changing `mmc.DATA_KEY` and `mmc.BATCH_KEY` for many functions. Note, defaults for these two for some functions have now been changed
 
@@ -191,17 +242,17 @@ pip install .
 
 - Added garbage collection to reduce wasteful memory usage buildup after plotting UMAPs (due to occasional object duplication).
 
-- Improved pytesting to validate post-classification structure of the `.obsm['lin']`
+- Improved pytests to validate post-classification structure of the `.obsm['lin']`
 
 - Fixed typos in some log and print statements
 
-- Updated docstrings and tutorials for compatability with sphinx.
+- Updated docstrings and tutorials for compatibility with sphinx.
 
 - Replaced explicit reference to `.obsm['lin']` with `key_added` parameter for `mmc.plot_important_features()`
 
 #### Removed
 
-- Unneccesary call to `clf.feature_importances_` in `mmc.feature_importances()`
+- Unnecessary call to `clf.feature_importances_` in `mmc.feature_importances()`
 
 - Removed `load_dir` argument in `mmc.Hierarchy()`. Hierarchies can now be loaded from a full file path provided by the `load` parameter. 
 
@@ -230,10 +281,6 @@ pip install .
 - `**kwargs` can now be passed through `mmc.plot_confusion` to `sklearn.metrics.ConfusionMatrixDisplay.from_predictions()`
 
 - Added support for recent versions of scikit-fda, which should include support for the current version: `skfda==0.8.1`. 
-
----
-
-## Past versions
 
 ### [0.1.3] - 22Dec22
 
@@ -293,7 +340,7 @@ pip install .
 
 - Warnings about any cython import failures during the import of scikit-fda are now silenced.
 
-- Fixed performance of `mmc.utils.generate_exlcusive_features` if `adatas` is given as a list of str. Previously this would mistakenly return an empty list.
+- Fixed performance of `mmc.utils.generate_exclusive_features` if `adatas` is given as a list of str. Previously this would mistakenly return an empty list.
 
 - Fixed reading in 10x formatted .h5 files without url backend using `mmc.utils.preprocess_adatas`
 
@@ -301,7 +348,7 @@ pip install .
 
 - Added fixes for cases where thresholds in `umap_thresh` were out of the bounds of the data.
 
-- Fixed error where if features were limited on a per-classification-level basis, the wrong set of features were passed to generate the training matricies.
+- Fixed error where if features were limited on a per-classification-level basis, the wrong set of features were passed to generate the training matrices.
 
 - Fixed error if no clusters needed to be balanced in `mmc.classifier.balance_borderline`
 

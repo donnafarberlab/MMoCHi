@@ -507,15 +507,15 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
     data_key_colors
         Colors to use for text labels for [data_key]s
     aspect
-        Aspect value passed to seaborne.FacetGrid function
+        Aspect value passed to seaborn.FacetGrid function
     height
-        Height of the plots. Passed to seaborne.FacetGrid and matplotlib.plt.text functions
+        Height of the plots. Passed to seaborn.FacetGrid and matplotlib.plt.text functions
     save_fig
         Filepath to save figure to. If none, will not save figure
     subsample
         Fraction of adata data to use for plotting. If less than 1 that fraction will be chosen randomly
     bw_adjust
-        Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborne.kdeplot for more details
+        Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborn.kdeplot for more details
     exclude_zeroes
         If True, only displays non-zero events, which can be useful for visualization of data with many events with zero protein expression
     Returns
@@ -558,7 +558,10 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
     for left_ax, batch in zip(left_axes, sorted(df[batch_key].unique())):
         plt.text(x=0,y=0.1,s=batch, transform=left_ax.transAxes,ha='right')
     for i, markname_full in enumerate(markname_full_list):
-        color = data_key_colors[data_key.index(markname_full.split("_mod_")[-1])]
+        if '_mod_' in markname_full:
+            color = data_key_colors[data_key.index(markname_full.split("_mod_")[-1])]
+        else:
+            color = 'b'
         plt.text(x=1/(len(markname_full_list))*(i) + .5/(len(markname_full_list)),y=height,
                  s="\n".join(markname_full.replace('__','_').replace('__','_').replace('_mod_','__').split("_")), 
                  transform=g.fig.transFigure,ha='center',c=color)
@@ -576,7 +579,7 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
 
 def density_plot(adata: anndata.AnnData, marker: str,
                  batch: str, batch_key: str=utils.BATCH_KEY,
-                 data_key: str=utils.DATA_KEY,
+                 data_key: Union[str,list]=utils.DATA_KEY,
                  bw_adjust: float=0, step: float=0.1,
                  exclude_zeroes: bool=True):
     '''
@@ -595,7 +598,7 @@ def density_plot(adata: anndata.AnnData, marker: str,
     data_key
         Label in .obsm to be plotted. 
     bw_adjust
-        Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborne.kdeplot for more details. 
+        Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborn.kdeplot for more details. 
         Use 0 to plot a histogram.
     step
         Size of x ticks on histogram.   
@@ -604,6 +607,7 @@ def density_plot(adata: anndata.AnnData, marker: str,
     '''
   
     data, markname_full = utils.get_data(adata,marker,data_key,return_source=True)
+    data_key = markname_full.split('_')[-1] #to grab modality used
     if exclude_zeroes:
         data = data[(adata.obs[batch_key]==batch) & (adata.obsm[data_key][marker]>0)]
     else:
@@ -624,7 +628,7 @@ def density_plot(adata: anndata.AnnData, marker: str,
 
 def density_plot_total(adata: anndata.AnnData, marker: str,
                        batch: str, batch_key: str=utils.BATCH_KEY,
-                       data_key: str=utils.DATA_KEY, 
+                       data_key: Union[str,list]=utils.DATA_KEY, 
                        bw_adjust: float=0, step: float=0.1,
                        weights: Optional[float]=None):
     '''
@@ -643,9 +647,9 @@ def density_plot_total(adata: anndata.AnnData, marker: str,
     batch
         Label in .obs[batch_key] to be plotted.
     data_key
-        Label in .obsm to be plotted. 
+        Label in .obsm to be plotted. If multiple obsm locations provided, provided order will be respected.
     bw_adjust
-        Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborne.kdeplot for more details.
+        Scalar to multiply bandwidth smoothing method used by seaborn.kdeplot. See seaborn.kdeplot for more details.
     step
         Size of x ticks on histogram.    
     weight
@@ -653,6 +657,7 @@ def density_plot_total(adata: anndata.AnnData, marker: str,
         heights of the batch and the total dataset. Passing None calculates n_batch_events/n_total_events
     '''
     data, markname_full = utils.get_data(adata,marker,data_key,return_source=True)
+    data_key = markname_full.split('_')[-1] #to grab modality used
     data_max = max(data)
     data_batch = data[adata.obs[batch_key]==batch]
     data = data[data>0]

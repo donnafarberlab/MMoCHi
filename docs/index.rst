@@ -5,13 +5,19 @@ MMoCHi - MultiModal Classifier Hierarchy
 .. mdinclude:: ../README.md
    :start-line: 5
    :end-line: 13
-   
 
 * To get started with MMoCHi, see :ref:`installation`, :ref:`tutorials`, and :ref:`Example Hierarchies`.
 * For more details on formatting your data correctly, read the :ref:`Input and Output Specifications`.
 * For complete documentation, check out our :ref:`api`.
 * Check out our `Github <https://github.com/donnafarberlab/MMoCHi>`_! 
-* Read our preprint: Daniel P. Caron, William L. Specht, David Chen, Steven B. Wells, Peter A. Szabo, Isaac J. Jensen, Donna L. Farber, Peter A. Sims. "**Multimodal hierarchical classification of CITE-seq data delineates immune cell states across lineages and tissues**." bioRxiv, 2023 `[Open access article] <https://www.biorxiv.org/content/10.1101/2023.07.06.547944v1>`_
+
+Details about the algorithm, example applications, and benchmarking is available in our paper:
+Daniel P. Caron, William L. Specht, David Chen, Steven B. Wells, Peter A. Szabo, Isaac J. Jensen, Donna L. Farber, Peter A. Sims. "**Multimodal hierarchical classification of CITE-seq data delineates immune cell states across lineages and tissues**." Cell Reports Methods, 2025 `[Open Access] <https://doi.org/10.1016/j.crmeth.2024.100938>`_
+
+.. image:: ./_static/MMoCHi_GraphicalAbstract.jpg
+   :scale: 40 %
+   :align: center
+   :target: https://doi.org/10.1016/j.crmeth.2024.100938
 
 .. tocTree::
    :hidden:
