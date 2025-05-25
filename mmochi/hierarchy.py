@@ -1166,8 +1166,6 @@ class Hierarchy:
 
         Parameters
         ----------
-        h
-            Hierarchy object to use for definitions
         adata
             Adata to use to lookup gene names, with genes in the .X, 
         batches
@@ -1288,8 +1286,6 @@ class Hierarchy:
         
         Parameters
         ----------
-        h
-            Hierarchy object to use to find kwargs
         levels
             Classification level(s) of MMoCHi to query for kwargs
         kwargs
@@ -1298,7 +1294,7 @@ class Hierarchy:
         Returns
         -------
         df
-            Dataframe with levels as indices and kwargs as columnss
+            Dataframe with levels as indices and kwargs as columns
             
         """
         if levels is None:
@@ -1334,8 +1330,6 @@ class Hierarchy:
         
         Parameters
         ----------
-        h
-            Hierarchy object to use to find kwargs
         levels
             Classification level(s) of MMoCHi to query for kwargs
         kwargs
