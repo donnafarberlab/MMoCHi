@@ -521,9 +521,9 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                     df = pd.concat([df,lost_items])
                     
                     df.reset_index(inplace=True)
-                    df[level + '_holdout'] = df[level + '_holdout'].fillna(False)
+                    df[level + '_holdout'] = df[level + '_holdout'].fillna(0)
                     if hierarchy.get_info(level,'calibrate') or hierarchy.get_info(level,'optimize_hyperparameters'):
-                        df[level + '_opt_holdout'] = df[level + '_opt_holdout'].fillna(False)
+                        df[level + '_opt_holdout'] = df[level + '_opt_holdout'].astype(float).fillna(0).astype(bool)
                     df = df.groupby(['index',level+'_hc']).sum()
                     df.reset_index(level=1,inplace=True)   
                     
@@ -647,7 +647,7 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
                         cal_method='isotonic'
                         logg.info(f'Calibrating with method {cal_method}')
                         cal_clf = CalibratedClassifierCV(clf, method=cal_method, cv="prefit") # isotonic should perform better with imbalanced classes.
-                        X_calibration = subset_X[calibration_mask]
+                        X_calibration = subset_X[np.array(calibration_mask)]
                         cal_clf.fit(X_calibration, y_calibration)
                         hierarchy.set_clf(level,cal_clf,features_used)
                 
@@ -718,17 +718,17 @@ def classify(adata: anndata.AnnData, hierarchy: hierarchy.Hierarchy,
         total_adata.obsm[key_added][cols[cols.str.endswith('_hc')]].astype(str).astype('category')
 
         total_adata.obsm[key_added].loc[:,cols.str.endswith('_holdout')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.endswith('_holdout')].fillna(False)
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_holdout')].fillna(0)
         total_adata.obsm[key_added][cols[cols.str.endswith('_holdout')]] = \
         total_adata.obsm[key_added][cols[cols.str.endswith('_holdout')]].astype(bool)
         
         total_adata.obsm[key_added].loc[:,cols.str.endswith('_opt_holdout')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.endswith('_opt_holdout')].fillna(False)
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_opt_holdout')].fillna(0)
         total_adata.obsm[key_added][cols[cols.str.endswith('_opt_holdout')]] = \
         total_adata.obsm[key_added][cols[cols.str.endswith('_opt_holdout')]].astype(bool)
         
         total_adata.obsm[key_added].loc[:,cols.str.endswith('_train')] = \
-        total_adata.obsm[key_added].loc[:,cols.str.endswith('_train')].fillna(False)
+        total_adata.obsm[key_added].loc[:,cols.str.endswith('_train')].fillna(0)
         total_adata.obsm[key_added][cols[cols.str.endswith('_train')]] = \
         total_adata.obsm[key_added][cols[cols.str.endswith('_train')]].astype(bool)
         total_adata.obsm[key_added].loc[:,cols.str.endswith('_traincounts')] = \
@@ -1046,12 +1046,12 @@ class _HVF_PCA_Neighbors():
             if self.modalities[i] < 5000:
                 self.hvf.extend(self.features_used[self.feature_modalities == i])
             else:
-                adata = anndata.AnnData(X=X[:,self.feature_modalities == i],dtype=np.float32, 
+                adata = anndata.AnnData(X=X[:,self.feature_modalities == i],#dtype=np.float32, 
                                         var = pd.DataFrame(index=self.features_used[self.feature_modalities == i]))
                 sc.pp.highly_variable_genes(adata,n_top_genes = 5000)
                 self.hvf.extend(adata.var_names[adata.var.highly_variable].tolist())
         logg.debug('PCA for fit for _HVF_PCA_Neighbors') 
-        adata = anndata.AnnData(X=X[:,[i in self.hvf for i in self.features_used]],dtype=np.float32)
+        adata = anndata.AnnData(X=X[:,[i in self.hvf for i in self.features_used]],) #dtype=np.float32
         sc.pp.scale(adata,zero_center=False)
         sc.tl.pca(adata,n_comps=15)
         self.pca = adata.obsm['X_pca']
@@ -1068,7 +1068,7 @@ class _HVF_PCA_Neighbors():
         """
         TODO implement neighbors and leiden calculations that do not depend on scanpy"""
         if self.leiden is None:
-            adata = anndata.AnnData(X=self.pca,dtype=np.float32)
+            adata = anndata.AnnData(X=self.pca) #dtype=np.float32
             adata.obsm['X_pca'] = self.pca
             logg.debug('neighbors for in_danger_noise clustering')
             sc.pp.neighbors(adata,n_pcs=15)
@@ -1281,10 +1281,10 @@ def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
     conf_names = [x for x in adata.obsm[key_added].columns if "_probability" in x]
     # Match column names
     conf_matrix = pd.DataFrame(columns = names_matrix.columns, index = names_matrix.index)
-    probability_matrix = adata.obsm[key_added].loc[:,conf_names]
+    probability_matrix = adata.obsm[key_added].loc[:,conf_names].astype(float)
     probability_matrix.columns = [i.split('_probability')[0] for i in probability_matrix.columns]
     conf_matrix = conf_matrix.fillna(probability_matrix)
-    conf_matrix = conf_matrix.fillna(1)
+    conf_matrix = conf_matrix.astype(float).fillna(1.0)
     conf_matrix[(names_matrix.isna()) | (names_matrix == 'nan')] = np.nan
     
     if not confidence_column is None:
@@ -1298,7 +1298,7 @@ def terminal_names(adata: anndata.AnnData, obs_column: str='classification',
     
     labels = names_matrix.iloc[:,0].copy()
     labels.name = None
-    confidences = conf_matrix.iloc[:,0].copy()
+    confidences = conf_matrix.iloc[:,0].copy().astype(float)
     confidences.name = None
     blacklisted = conf_matrix.iloc[:,0].copy() < 0
     blacklisted.name = None

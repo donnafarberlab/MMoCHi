@@ -9,6 +9,7 @@ import random
 import scanpy as sc
 from typing import Union, Optional, Sequence, Any, Mapping, List, Tuple, Callable, List
 import anndata
+import os 
 
 from . import utils
 from .logger import logg
@@ -524,10 +525,9 @@ def _plot_important_features(adata: anndata.AnnData, level: str,
             obsm_key = None
         if len(obsm_key) > 1:
             logg.warn(f'Multiple data_keys in .obsm [{obsm_key}], defaulting to {list(obsm_key)[0]}')
-        else:
-            obsm_key = [obsm_key]
-            
-    is_protein = df.Feature.str.split('_mod_',expand=True)[1] == obsm_key
+    
+    is_protein = df.Feature.str.split('_mod_',expand=True)[1] == obsm_key[0]
+
     df.Feature = df.Feature.str.split('_mod_',expand=True)[0]
     df_gene = df[~is_protein]
     df_prot = df[is_protein]

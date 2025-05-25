@@ -1,5 +1,5 @@
 '''MMoCHi: Multimodal Classifier Hierarchy'''
-__version__ = '0.3.2'
+__version__ = '0.3.5dev'
 
 from .classifier import terminal_names, hc_threshold, classifier_setup, classify, identify_group_markers, define_external_holdout, DEBUG_ERRORS
 from .hierarchy import Hierarchy, hc_defs, Classification, Subset

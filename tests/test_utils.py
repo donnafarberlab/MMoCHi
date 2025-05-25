@@ -71,8 +71,5 @@ def test_marker_get_data(load_adata):
     utils.get_data(adata, 'batch_obs',return_source=True)
     with pytest.raises(ValueError):
         utils.get_data(adata, 'CD1999','proteins')  
-        
-# def test_umap_thresh():
-    
-    
+
     

@@ -10,6 +10,7 @@ import sklearn.ensemble
 import sklearn.calibration
 from typing import Union, Optional, Sequence, Any, Mapping, List, Tuple, Callable, List, Set, Dict
 import anndata
+import textwrap
 
 from . import utils
 from .logger import logg
@@ -105,6 +106,55 @@ class Hierarchy:
             self.tree.create_node("All","All",data=Subset("root")) #creating a root node
             self.reset_thresholds()
         return
+
+    def __repr__(self):
+        
+        return self.__str__()
+        
+    def __str__(self):
+        levels = self.get_classifications()
+        level_str = []
+        subsets_str = {'All'}
+        classification_nodes = len(levels)
+        trained = []
+        cutoff_nodes = 0
+        terminal_subsets = 1
+        print_statement = ''
+        
+        for level in levels:
+            subsets_str.remove(self.classification_parents(level)[0])
+            if self.get_info(level,'is_cutoff'):
+                cutoff_nodes+=1
+                level_str.append(level + ' (Cutoff)')
+            else:
+                level_str.append(level)
+                if self.has_clf(level):
+                    trained.append(level)
+            subsets_str.update(set(self.subsets_info(level).keys()))
+            terminal_subsets = terminal_subsets + len(self.subsets_info(level)) - 1
+        
+        
+        print_statement = f'Hierachy object with {classification_nodes} classification layers and {terminal_subsets} terminal subsets:\n'
+        
+        string = f'    Classification layers: {str(level_str).lstrip("[").rstrip("]")}'
+        wrapper = textwrap.TextWrapper(subsequent_indent=' '*27, width=100) 
+        string = wrapper.fill(text=string) 
+        print_statement += string + '\n'
+        
+        str2 = f'    Terminal subsets: {str(subsets_str).lstrip("{").rstrip("}")}'
+        wrap = textwrap.TextWrapper(subsequent_indent=' '*22, width=100) 
+        string = wrap.fill(text=str2) 
+        print_statement += string + '\n\n'
+        
+        if len(trained) == 0:
+            print_statement += 'No classification layers appear to have been trained.'
+        elif (classification_nodes - cutoff_nodes) == len(trained):
+            print_statement += f'Hierarchy appears to be partially trained. Layers {trained} are trained.'
+        else:
+            print_statement += 'Hierarchy appears to be trained at all levels.'
+    
+        
+        return print_statement
 
     def _load(self, name: str):
         """
@@ -393,7 +443,7 @@ class Hierarchy:
         name
             Node to get information from, if none gets general information on the hierarchy
         info_type
-            What type of information to get for the node
+            What type of information to get from the node
         
         Returns
         -------
@@ -678,7 +728,7 @@ class Hierarchy:
                 pass
         if len(x) == 0 and flexible_batch:
             try:
-                x = self.thresholds.loc[(marker,level,None)]
+                x = self.thresholds.loc[(marker,name,None)]
             except:
                 pass
         if len(x) == 0 and flexible_level and flexible_batch:
@@ -759,7 +809,7 @@ class Hierarchy:
                            mode: str='fill in', interactive: bool=True,
                            plot: bool=True, limit: Optional[Union[str, List[str]]]=None, 
                            batch_marker_order: bool=False, skip: List[str]=[], bins: int=100,
-                          external_holdout: bool=False, key_added: str = 'lin'):
+                          external_holdout: bool=False, key_added: str = 'lin', force_model: list=[]):
         '''
         Runs thresholding using the `thresholding.threshold()` function. First uses `mmc.get_data` to search for marker.
         If marker is not found in AnnData, gives up and ask whether to label it as interactive or not.
@@ -793,6 +843,8 @@ class Hierarchy:
             If external hold out was defined in adata.obsm[key_added], removes external hold out from automatic threshold calculations and from graphs used for manual thresholding
         key_added
             If external_holdout is true, the place in adata.obsm[key_added] to search for the external hold out column (bool T F column used to indicate whether an event should be set aside for hold out)
+        force_model
+            If precalculated thresholds already exists, will recalculate thresholds on this model based on Gaussian Mixture Model. Can be used to force model calculation for genes, which be default are thresholded to 0.5. 
         '''
         if external_holdout:
             try:
@@ -850,7 +902,7 @@ class Hierarchy:
                 logg.print(f'On level {level}')
             try: 
                 threshold = thresholding.threshold(marker,adata[external_holdout_mask][mask],data_key,preset_threshold=t,
-                                         include_zeroes=False, n=0, force_model=False,
+                                         include_zeroes=False, n=0, force_model=bool(marker in force_model),
                                          plot=plot, interactive=interactive, fancy='fancy' in mode, run=False,
                                          title_addition= '' if batch_key is None else batch,bins=bins)
                 if not 'fancy' in mode:

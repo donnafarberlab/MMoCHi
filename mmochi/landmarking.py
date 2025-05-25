@@ -558,7 +558,10 @@ def stacked_density_plots(adata: anndata.AnnData, marker_list: Union[pd.DataFram
     for left_ax, batch in zip(left_axes, sorted(df[batch_key].unique())):
         plt.text(x=0,y=0.1,s=batch, transform=left_ax.transAxes,ha='right')
     for i, markname_full in enumerate(markname_full_list):
-        color = data_key_colors[data_key.index(markname_full.split("_mod_")[-1])]
+        if '_mod_' in markname_full:
+            color = data_key_colors[data_key.index(markname_full.split("_mod_")[-1])]
+        else:
+            color = 'b'
         plt.text(x=1/(len(markname_full_list))*(i) + .5/(len(markname_full_list)),y=height,
                  s="\n".join(markname_full.replace('__','_').replace('__','_').replace('_mod_','__').split("_")), 
                  transform=g.fig.transFigure,ha='center',c=color)

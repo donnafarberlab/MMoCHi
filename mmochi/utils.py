@@ -71,7 +71,7 @@ def intersect_features(adatas: List[anndata.AnnData], data_key: str=DATA_KEY) ->
             logg.warn(f'Multiple valid data_keys {obsm_key} not supported, will use {obsm_key[0]}')
             obsm_key = obsm_key[0]
         if len(obsm_key) != 0:
-            intersection_ADT = list(set.intersection(*(set(val) for val in [adata.obsm[d_key].columns for adata in adatas])))
+            intersection_ADT = list(set.intersection(*(set(val) for val in [adata.obsm[data_key].columns for adata in adatas])))
     for i,adata in enumerate(adatas):
         adata = adata[:,intersection_GEX].copy()
         if not data_key is None and len(obsm_key) != 0:
@@ -216,7 +216,10 @@ def obsm_to_X(adata: anndata.AnnData, data_key: str=DATA_KEY) -> anndata.AnnData
     adata_new
         Object with .X of AnnData.obsm[data_key]
     '''
-    adata_new = anndata.AnnData(adata.obsm[d_key],adata.obs,pd.DataFrame(index=adata.obsm[d_key].columns),dtype=float)
+    if isinstance(data_key, list):
+        data_key = data_key[0]
+
+    adata_new = anndata.AnnData(adata.obsm[data_key],adata.obs,pd.DataFrame(index=adata.obsm[data_key].columns)) # dtype=float
     return adata_new
 
 def _marker(keyword: str, cols: List[str], allow_multiple: bool=False) -> Union[List[str], str]:
@@ -319,7 +322,7 @@ def marker(adata: anndata.AnnData, parameter: Union[str, List[str]],
     elif len(results)==1:
         return results[0]
     elif len(results)==0:
-        return None
+        assert False, "No markers found"
     else:
         return results
         
@@ -453,7 +456,7 @@ def umap_interrogate_level(adata: anndata.AnnData, level: str, batch_key: str=No
         Sent to scanpy.pl.embedding
     '''
     batch_masks, batches = batch_iterator(adata,batch_key)
-    adata.obs['High-Confidence Thresh'] = adata.obsm[key_added][f'{level}_hc'].replace({'nan':None})
+    adata.obs['High-Confidence Thresh'] = adata.obsm[key_added][f'{level}_hc'].astype(str).replace({'nan':None})
     adata.obs['High-Confidence Thresh'] = pd.Categorical(adata.obs['High-Confidence Thresh'], 
                                                          categories = sorted(set(adata.obs['High-Confidence Thresh'])-set([None,'?',np.nan]))+['?'])
     adata.obs['Training Data'] = adata.obs['High-Confidence Thresh'].copy()
@@ -664,7 +667,7 @@ def generate_exclusive_features(adata_list: Union[List[str], List[anndata.AnnDat
     features = []
     for adata in adata_list:
         if isinstance(adata, str):
-            adata = anndata.read_h5ad(adata_path)
+            adata = anndata.read_h5ad(adata)
         if data_key is None:
             features_one = list(adata.var_names)
         else:

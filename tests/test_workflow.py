@@ -61,7 +61,7 @@ def test_save_peak_overrides():
     mmc.save_peak_overrides(save_path,peak_overrides)
     loaded_overrides = mmc.load_peak_overrides(save_path)
     assert peak_overrides == loaded_overrides, 'Loaded overrides are not the same as the saved ones.'
-    return save_path
+    return None
 
 @pytest.mark.parametrize('kwargs', [dict(batch='5k_pbmc_protein_v3.h5', marker='CD19', update_lower=False, update_upper=False),
                                     dict(batch='5k_pbmc_protein_v3.h5', marker='CD19', update_lower=1, update_upper=False),
@@ -241,7 +241,7 @@ def test_hierarchy_run_thresholds2(test_hierarchy,landmarked,mode):
     test_hierarchy = test_hierarchy.copy()
     test_hierarchy.run_all_thresholds(landmarked,data_key='landmark_protein',
                                             batch_key='batch',mode=mode,limit='CD19',interactive=False,batch_marker_order=True)
-    return test_hierarchy
+    return #test_hierarchy
 
 @pytest.fixture(scope="module")
 def test_hierarchy_load_thresholds(test_hierarchy):
@@ -302,7 +302,7 @@ def test_classify_cutoff(landmarked, test_hierarchy_load_thresholds):
 def test_classify_nparray(landmarked, test_hierarchy_load_thresholds):
     mmc.classifier.DEBUG_ERRORS = True
     landmarked = landmarked.copy()
-    landmarked.X = landmarked.X.A
+    landmarked.X = landmarked.X.toarray()
     adata,hierarchy = mmc.classify(landmarked, test_hierarchy_load_thresholds.copy(), 'lin', 
                                    'landmark_protein', batch_key='batch',
                                    retrain = True)

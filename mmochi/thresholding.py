@@ -317,7 +317,7 @@ def _calc_threshold(markname: str, adata: anndata.AnnData,
     '''
     data, markname_full = utils.get_data(adata,markname,data_key,return_source=True)
 
-    if "_gex" in markname_full or include_zeroes:
+    if include_zeroes:
         include_zeros=True
         mask = ~pd.Series(data).isna()
     else:
