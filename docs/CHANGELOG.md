@@ -15,6 +15,14 @@ pip install .
 ---
 ## Current version
 
+### [0.3.6dev] - 02OCT25
+
+#### Fixed
+
+- Fixed loading and saving functions for `mmc.Hierarchy` to not append excessive `".hierarchy"` file extensions if the user has already provided it
+- Fixed `mmc.log_to_file` to only append excessive `".log"` file extensions if the user has already provided it
+
+
 ### [0.3.5] - 24MAY25
 
 #### Added

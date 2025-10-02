@@ -165,9 +165,11 @@ class Hierarchy:
         name
             Name of the file to load (without the .hierarchy; that will be automatically appended)
         """
-        with open(name+'.hierarchy','rb') as f:
+        if not name.endswith('.hierarchy'):
+            name += '.hierarchy'
+        with open(name,'rb') as f:
             self.__dict__ = pickle.load(f)
-        logg.print('Loaded '+name+'.hierarchy')
+        logg.print('Loaded '+name)
         return
     
     def save(self, name: str):
@@ -179,7 +181,9 @@ class Hierarchy:
         name
             Name of the file to save (without the .hierarchy; that will be automatically appended)
         """
-        with open(name+'.hierarchy','wb') as f:
+        if not name.endswith('.hierarchy'):
+            name += '.hierarchy'
+        with open(name,'wb') as f:
             pickle.dump(self.__dict__,f)
         return
 

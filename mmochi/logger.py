@@ -96,7 +96,9 @@ def log_to_file(file_name: str, file_mode: str='w'):
     file_mode
         Either "w" to overwrite a preexisting file, or "a" to append logs to a preexisting file. 
     '''
-    fileHandler = logging.FileHandler(f'{file_name}.log',mode=file_mode)
+    if not file_name.endswith('.log'):
+        file_name += '.log'
+    fileHandler = logging.FileHandler(file_name,mode=file_mode)
     fileHandler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     fileHandler.setLevel(logging.DEBUG)
     logg.addHandler(fileHandler)
